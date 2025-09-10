@@ -11,6 +11,8 @@ export def get-prompt-context [] {
         let host_name = ($context.host | columns | first)
         let vps_name = ($context.host | get $host_name | get name)
         let host_info = ($context.host | get $host_name)
+        let customer_name = ($context.customer | columns | first)
+        let customer_info = ($context.customer | get $customer_name)
 
         if not ($context.prompt_show) {
             ""
@@ -19,9 +21,9 @@ export def get-prompt-context [] {
         
         # Different formatting based on host type
         if ($host_info.hostname == "localhost") {
-            "🏠 local"
+            $"🏠 local - ($customer_info.abbreviation)"
         } else {
-            $"🌐 ($vps_name)"
+            $"🌐 ($vps_name) - ($customer_info.abbreviation)"
         }
     } catch {
         "❓ unknown"
