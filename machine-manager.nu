@@ -16,12 +16,6 @@ export def load_context [] {
     open $context_path
 }
 
-# Save the context
-def save_context [context: record] {
-    let context_path = get_context_file_path
-    $context | to json | save -f $context_path
-}
-
 def prepare_hosts_for_fzf [config: record, current_host: string] {
     $config.hosts 
     | transpose host info 
@@ -59,14 +53,11 @@ def extract_host_from_fzf [selected_line: string] {
 
 # Internal logic to change host (factorization)
 def set_host_internal [host: string, config: record] {
+    let context = load_context
     let host_info = ($config.hosts | get $host)
 
     # Create new context with selected host
-    let new_context = {
-        host: {
-            $host: $host_info
-        }
-    }
+    let new_context = $context | upsert host { $host: $host_info}
 
     # Save context
     save_context $new_context
@@ -78,7 +69,12 @@ def set_host_internal [host: string, config: record] {
 #####################                                             Public functions                                                  #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-
+# Save the context
+export def save_context [context: record] {
+    let context_path = get_context_file_path
+    $context | to json | save -f $context_path
+}
+# Create the default context
 export def create_default_context [] {
     let context_path = get_context_file_path
     let config = load_config
@@ -96,9 +92,10 @@ export def create_default_context [] {
 }
 
 export def load_config [] {
-    let config_path = "./PurposeOps/config.json"
+    let config_path = "./config.json"
+    print $config_path
     if not ($config_path | path exists) {
-        error make {msg: "Configuration file not found"}
+        print "The file doesn't exist"
     }
     open $config_path
 }
@@ -186,6 +183,7 @@ export def list-hosts [] {
         }
     }
 }
+
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
