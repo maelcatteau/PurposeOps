@@ -6,38 +6,17 @@
 def get_context_file_path [] {
     "~/dev/nu-modules/PurposeOps/context.json" | path expand
 }
-
-export def load_context [] {
-    let context_path = get_context_file_path
-    if not ($context_path | path exists) {
-        # Create default context file if it doesn't exist
-        create_default_context
-    }
-    open $context_path
-}
-
-def prepare_hosts_for_fzf [config: record, current_host: string] {
-    $config.hosts 
-    | transpose host info 
-    | each {|row|
-        let status = if ($row.host == $current_host) { " 👉 CURRENT" } else { "" }
-        let type_icon = if ($row.info.hostname == "localhost") { "🏠" } else { "🌐" }
-
-        # Format similar to your containers: ICON │ HOST_NAME │ DESCRIPTION │ STATUS
-        $"($type_icon) │ ($row.host) │ ($row.info.name)($status)"
-    }
+def get_config_file_path [] {
+    "~/dev/nu-modules/PurposeOps/config.json" | path expand
 }
 
 def extract_host_from_fzf [selected_line: string] {
-    print $"🔍 Extracting from: '($selected_line)'"
 
     # Split by │ and clean each part
     let parts = ($selected_line 
         | split row "│" 
         | each { |part| $part | str trim }
         | where $it != "")
-
-    print $"📝 Cleaned parts: ($parts)"
 
     # Expected structure: [index, icon, host_name, description]
     # Host name is at index 2 (3rd element)
@@ -69,10 +48,31 @@ def set_host_internal [host: string, config: record] {
 #####################                                             Public functions                                                  #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
+export def prepare_hosts_for_fzf [config: record, current_host: string] {
+    $config.hosts 
+    | transpose host info 
+    | each {|row|
+        let status = if ($row.host == $current_host) { " 👉 CURRENT" } else { "" }
+        let type_icon = if ($row.info.hostname == "localhost") { "🏠" } else { "🌐" }
+
+        # Format similar to your containers: ICON │ HOST_NAME │ DESCRIPTION │ STATUS
+        $"($type_icon) │ ($row.host) │ ($row.info.name)($status)"
+    }
+}
+
 # Save the context
 export def save_context [context: record] {
     let context_path = get_context_file_path
     $context | to json | save -f $context_path
+}
+# Load the context
+export def load_context [] {
+    let context_path = get_context_file_path
+    if not ($context_path | path exists) {
+        # Create default context file if it doesn't exist
+        create_default_context
+    }
+    open $context_path
 }
 # Create the default context
 export def create_default_context [] {
@@ -92,8 +92,7 @@ export def create_default_context [] {
 }
 
 export def load_config [] {
-    let config_path = "./config.json"
-    print $config_path
+    let config_path = get_config_file_path
     if not ($config_path | path exists) {
         print "The file doesn't exist"
     }
