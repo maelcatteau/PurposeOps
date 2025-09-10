@@ -9,11 +9,11 @@ use ssh-manager.nu *
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-#####################                                          Fonctions helper internes                                            #######################
+#####################                                          Internal helper functions                                            #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-# Fonction helper pour sélectionner les bonnes informations pour le bon type d'opérations
+# Helper function to select the right information for the right type of operation
 def get_config [operation: string] {
     match $operation {
         "start" => {
@@ -41,12 +41,12 @@ def get_config [operation: string] {
             past_participle: "networks extracted from"
         }
         _ => {
-            error make {msg: $"Configuration non trouvée pour l'opération: ($operation)"}
+            error make {msg: $"Configuration not found for operation: ($operation)"}
         }
     }
 }
 
-# Fonction helper pour récupérer le container depuis la sortie du fuzzy finder 
+# Helper function to get container from fuzzy finder output
 def get_container_name_from_fzf [fzf_output: string] {
     let container_name = ($fzf_output | str replace -a "│" "" 
         | str trim 
@@ -57,38 +57,38 @@ def get_container_name_from_fzf [fzf_output: string] {
     return $container_name
 }
 
-# Nouvelle fonction qui évite les problèmes d'échappement
+# New function that avoids escaping issues
 def get_containers_list [
     format_string: string,
-    --all(-a)  # Flag pour inclure tous les containers (arrêtés inclus)
+    --all(-a)  # Flag to include all containers (including stopped ones)
 ] {
-    # Récupérer les données en JSON (pas de problème d'échappement)
+    # Get data in JSON format (no escaping issues)
     let raw_data = if $all {
         run_docker_command ["ps" "-a" "--format" "json"]
     } else {
         run_docker_command ["ps" "--format" "json"]
     }
-    
-    # Parser et formater côté Nushell
+
+    # Parse and format on Nushell side
     $raw_data 
     | lines 
     | where $it != ""
     | each { |line| $line | from json }
     | each { |container|
-        # Extraire les champs qu'on veut (équivalent à votre format_string)
+        # Extract the fields we want (equivalent to your format_string)
         $"($container.Names)\t($container.Image)\t($container.Status)"
     }
     | str join "\n"
 }
 
-# Fonction pour vérifier si le contenu est vide (retourne juste un boolean)
+# Function to check if content is empty (just returns a boolean)
 def is_empty_content [content: string] {
     ($content | str trim | is-empty)
 }
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-#####################                                             Fonctions publiques                                               #######################
+#####################                                             Public functions                                                  #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 export def run_docker_command [command: list] {
@@ -99,21 +99,19 @@ export def run_docker_command [command: list] {
         run-external "docker" ...$command
     } else {
         let docker_cmd_string = (["docker"] | append $command | str join " ")
-        
+
         run_with_master $host_info $docker_cmd_string
     }
 }
 
-
-
-# Fonction générique pour les opérations Docker
+# Generic function for Docker operations
 export def docker_container_operation [
-    --start(-s),      # Flag pour démarrer
-    --stop(-p),       # Flag pour arrêter  
-    --restart(-r),    # Flag pour redémarrer
-    --networks(-n)    # Flag pour extraire les réseaux
+    --start(-s),      # Flag to start
+    --stop(-p),       # Flag to stop  
+    --restart(-r),    # Flag to restart
+    --networks(-n)    # Flag to extract networks
 ] {
-    # Déterminer l'opération en fonction des flags
+    # Determine operation based on flags
     let operation = if $start {
         "start"
     } else if $stop {
@@ -123,47 +121,47 @@ export def docker_container_operation [
     } else if $networks {
         "networks_extract"
     } else {
-        print "❌ Vous devez spécifier une opération : --start, --stop, --restart, ou --networks"
+        print "❌ You must specify an operation: --start, --stop, --restart, or --networks"
         return
     }
 
-    # Configuration pour chaque opération
+    # Configuration for each operation
     let config = get_config $operation
 
-    # Récupération des containers
+    # Get containers
     let containers_list = if $config.need_all {
         get_containers_list "{{.Names}}\t{{.Image}}\t{{.Status}}" --all
     } else {
         get_containers_list "{{.Names}}\t{{.Image}}\t{{.Status}}"
     }
 
-    # Vérification si des containers sont disponibles
+    # Check if containers are available
     if (is_empty_content $containers_list) {
-        print $"Aucun container disponible pour ($operation)"
+        print $"No containers available for ($operation)"
         return
     }
 
-    # Sélection avec fzf
+    # Selection with fzf
     let selected = try {
         $containers_list | lines | fzf --header=$config.header
     } catch {
-        ""  # Si fzf est annulé, retourne une string vide
+        ""  # If fzf is cancelled, return empty string
     }
 
-    # Vérification de la sélection
+    # Check selection
     if (is_empty_content $selected) {
-        print "Opération annulée - aucun container sélectionné"
+        print "Operation cancelled - no container selected"
         return
     }
 
-    # Extraction du nom du container
+    # Extract container name
     let container_name = get_container_name_from_fzf $selected
 
-    # Exécution de l'opération selon le type
+    # Execute operation according to type
     if $operation == "networks_extract" {
         print $"($config.verb) container: ($container_name)"
         let networks = run_docker_command ["inspect" $container_name] | from json | get NetworkSettings.Networks
-        
+
         if $env.LAST_EXIT_CODE == 0 {
             print $"✅ ($config.past_participle) container ($container_name)"
             return $networks
@@ -172,11 +170,11 @@ export def docker_container_operation [
             return
         }
     } else {
-        # Opérations standard (start, stop, restart)
+        # Standard operations (start, stop, restart)
         print $"($config.verb) container: ($container_name)"
         run_docker_command [$operation $container_name]
 
-        # Vérification du résultat
+        # Check result
         if $env.LAST_EXIT_CODE == 0 {
             print $"✅ Container ($container_name) ($config.past_participle) successfully"
         } else {
@@ -203,7 +201,7 @@ export def status [
     }
 }
 
-# Fonction pour lister la liste des réseaux existant
+# Function to list existing networks
 export def network_list [
     filter?: string    # Optional filter on network names
 ] {
@@ -214,8 +212,6 @@ export def network_list [
     }
     $base_data | select NAME DRIVER SCOPE
 }
-
-
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################

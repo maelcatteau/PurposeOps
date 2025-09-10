@@ -1,40 +1,57 @@
+###########################################################################################################################################################
+###########################################################################################################################################################
+#####################                                                  Imports                                                      #######################
+###########################################################################################################################################################
+###########################################################################################################################################################
+
 use context-manager.nu *
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-#####################                                              SSH Control Master                                              #######################
+#####################                                          Internal helper functions                                            #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-# Fonction pour obtenir le chemin du dossier des sockets de contrôle
+# Function to get the path of the control sockets directory
 def get_control_path [] {
     let control_dir = "~/dev/nu-modules/PurposeOps/controlmasters" | path expand
-    
-    # Créer le dossier s'il n'existe pas
+
+    # Create directory if it doesn't exist
     if not ($control_dir | path exists) {
         mkdir $control_dir
     }
-    
+
     $control_dir
 }
 
-# Fonction pour générer le nom du socket de contrôle
+# Function to generate the control socket name
 def get_control_socket [host_info: record] {
     let control_dir = get_control_path
     let socket_name = $"($host_info.user)@($host_info.hostname):($host_info.port)"
     $"($control_dir)/($socket_name)"
 }
 
-# Fonction pour vérifier si une connexion maître existe et est active
+# Function to resolve the key path (helper for identity file handling)
+def resolve_key_path [identity_file: string] {
+    $identity_file | path expand
+}
+
+###########################################################################################################################################################
+###########################################################################################################################################################
+#####################                                             Public functions                                                  #######################
+###########################################################################################################################################################
+###########################################################################################################################################################
+
+# Function to check if a master connection exists and is active
 export def is_master_active [host_info: record] {
     let socket_path = get_control_socket $host_info
-    
-    # Vérifier si le socket existe
+
+    # Check if socket exists
     if not ($socket_path | path exists) {
         return false
     }
-    
-    # Tester si la connexion est vraiment active
+
+    # Test if connection is really active
     let ssh_target = $"($host_info.user)@($host_info.hostname)"
     let test_result = try {
         run-external "ssh" "-O" "check" "-S" $socket_path $ssh_target
@@ -42,34 +59,34 @@ export def is_master_active [host_info: record] {
     } catch {
         false
     }
-    
+
     $test_result
 }
 
-# Fonction pour créer une connexion maître
+# Function to create a master connection
 export def create_master_connection [host_info: record] {
     let socket_path = get_control_socket $host_info
     let ssh_target = $"($host_info.user)@($host_info.hostname)"
-    
+
     print $"🔄 Creating master connection to ($ssh_target)..."
-    
-    # Construire les arguments SSH
+
+    # Build SSH arguments
     let ssh_args = [
-        "-M"                          # Mode Master
-        "-N"                          # Pas de commande (juste la connexion)
-        "-f"                          # En arrière-plan
-        "-S" $socket_path             # Chemin du socket
+        "-M"                          # Master mode
+        "-N"                          # No command (just connection)
+        "-f"                          # Background
+        "-S" $socket_path             # Socket path
         "-p" $host_info.port          # Port
     ]
-    
-    # Ajouter la clé privée si spécifiée
+
+    # Add private key if specified
     let ssh_args = if ($host_info.identity_file != "") {
         $ssh_args | append ["-i" $host_info.identity_file]
     } else {
         $ssh_args
     }
-    
-    # Créer la connexion maître
+
+    # Create master connection
     let result = try {
         run-external "ssh" ...$ssh_args $ssh_target
         true
@@ -77,67 +94,67 @@ export def create_master_connection [host_info: record] {
         print $"❌ Failed to create master connection: ($err.msg)"
         false
     }
-    
+
     $result
 }
 
-# Fonction pour exécuter une commande via la connexion maître
+# Function to execute a command via the master connection
 export def run_with_master [host_info: record, command: string] {
     let socket_path = get_control_socket $host_info
     let ssh_target = $"($host_info.user)@($host_info.hostname)"
-    
-    # S'assurer qu'on a une connexion maître active
+
+    # Ensure we have an active master connection
     if not (is_master_active $host_info) {
         if not (create_master_connection $host_info) {
             error make {msg: "Failed to establish master connection"}
         }
     }
-    
-    # CORRECTION: Échapper les accolades pour SSH
+
+    # FIX: Escape braces for SSH
     let escaped_command = $command | str replace --all "{{" "\\{\\{" | str replace --all "}}" "\\}\\}"
-    
-    # Construire les arguments SSH
+
+    # Build SSH arguments
     let ssh_args = [
         "-S" $socket_path
         "-p" $host_info.port
         "-o" "StrictHostKeyChecking=no"
         "-o" "ConnectTimeout=10"
     ]
-    
-    # Ajouter la clé privée si nécessaire
+
+    # Add private key if needed
     let ssh_args = if ($host_info.identity_file != "") {
         let key_path = resolve_key_path $host_info.identity_file
         $ssh_args | append ["-i" $key_path]
     } else {
         $ssh_args
     }
-    
-    # Exécuter la commande via la connexion maître
+
+    # Execute command via master connection
     run-external "ssh" ...$ssh_args $ssh_target $escaped_command
 }
 
-# Fonction pour fermer une connexion maître spécifique
+# Function to close a specific master connection
 export def close_master_connection [host_info: record] {
     let socket_path = get_control_socket $host_info
     let ssh_target = $"($host_info.user)@($host_info.hostname)"
 
-    # Vérifier si une connexion existe
+    # Check if connection exists
     if not ($socket_path | path exists) {
         print $"ℹ️  No master connection exists for ($ssh_target)"
         return true
     }
 
-    # Vérifier si la connexion est active
+    # Check if connection is active
     if not (is_master_active $host_info) {
         print $"ℹ️  Master connection for ($ssh_target) is already inactive"
-        # Nettoyer le socket orphelin
+        # Clean up orphaned socket
         rm $socket_path
         return true
     }
 
     print $"🔄 Closing master connection to ($ssh_target)..."
 
-    # Fermer la connexion maître
+    # Close master connection
     let result = try {
         run-external "ssh" "-O" "exit" "-S" $socket_path $ssh_target
         print $"✅ Master connection closed for ($ssh_target)"
@@ -147,7 +164,7 @@ export def close_master_connection [host_info: record] {
         false
     }
 
-    # Nettoyer le socket s'il existe encore
+    # Clean up socket if it still exists
     if ($socket_path | path exists) {
         try {
             rm $socket_path
@@ -159,44 +176,44 @@ export def close_master_connection [host_info: record] {
     $result
 }
 
-# Fonction pour fermer toutes les connexions maîtres actives
+# Function to close all active master connections
 export def close_all_master_connections [] {
     let control_dir = get_control_path
-    
+
     print "🔄 Closing all master connections..."
-    
-    # Chercher tous les sockets dans le répertoire de contrôle
+
+    # Search for all sockets in control directory
     let sockets = try {
         ls $control_dir | where type == file | get name
     } catch {
         []
     }
-    
+
     if ($sockets | is-empty) {
         print "ℹ️  No master connections found"
         return
     }
-    
+
     mut closed_count = 0
-    
-    # Fermer chaque connexion
+
+    # Close each connection
     for socket_path in $sockets {
         let socket_name = ($socket_path | path basename)
         print $"🔄 Processing ($socket_name)..."
-        
-        # Extraire les infos de connexion depuis le nom du socket
+
+        # Extract connection info from socket name
         # Format: user@hostname:port
         let parts = ($socket_name | parse "{user}@{hostname}:{port}")
-        
+
         if ($parts | length) > 0 {
             let conn_info = $parts | first
             let host_info = {
                 user: $conn_info.user
                 hostname: $conn_info.hostname  
                 port: ($conn_info.port | into int)
-                identity_file: ""  # On n'a pas cette info depuis le socket
+                identity_file: ""  # We don't have this info from socket
             }
-            
+
             try {
                 let ssh_target = $"($host_info.user)@($host_info.hostname)"
                 run-external "ssh" "-O" "exit" "-S" $socket_path $ssh_target
@@ -205,8 +222,8 @@ export def close_all_master_connections [] {
             } catch {
                 print $"  ⚠️  Failed to close ($socket_name)"
             }
-            
-            # Supprimer le fichier socket
+
+            # Remove socket file
             try {
                 rm $socket_path
             } catch {
@@ -214,60 +231,76 @@ export def close_all_master_connections [] {
             }
         }
     }
-    
+
     print $"✅ Closed ($closed_count) master connections"
 }
 
-# Fonction pour fermer la connexion de l'hôte actuellement sélectionné
+# Function to close the connection of the currently selected host
 export def close_current_master_connection [] {
     let context = load_context
     let current_host_info = $context.host | values | first
-    
+
     if ($current_host_info.hostname == "localhost") {
         print "ℹ️  No master connection to close for localhost"
         return
     }
-    
+
     close_master_connection $current_host_info
 }
 
-# Fonction pour lister toutes les connexions maîtres actives
+# Function to list all active master connections
 export def list_master_connections [] {
     let control_dir = get_control_path
-    
+
     print "🔍 Active master connections:"
-    print "=" * 50
-    
+
     let sockets = try {
-        ls $control_dir | where type == file | get name
+        ls $control_dir | where type == socket | get name
     } catch {
         []
     }
-    
+
     if ($sockets | is-empty) {
         print "ℹ️  No master connections found"
         return
     }
-    
+
     for socket_path in $sockets {
         let socket_name = ($socket_path | path basename)
+
+        # Parse socket name to extract connection info (format: user@hostname:port)
+        let parts = ($socket_name | parse "{user}@{hostname}:{port}")
         
-        # Extraire user@hostname depuis le nom du socket (format: user@hostname:port)
-        let parts = ($socket_name | split row ":")
-        let ssh_target = if ($parts | length) > 0 { $parts | first } else { $socket_name }
-        
-        # Test si la connexion est vraiment active
-        let is_active = try {
-            run-external "ssh" "-O" "check" "-S" $socket_path $ssh_target
-            "🟢 ACTIVE"
-        } catch {
-            "🔴 INACTIVE"
+        if ($parts | length) > 0 {
+            let conn_info = $parts | first
+            let host_info = {
+                user: $conn_info.user
+                hostname: $conn_info.hostname
+                port: ($conn_info.port | into int)
+                identity_file: ""  # Not needed for status check
+            }
+            
+            # Use existing function to check if master is active
+            let is_active = if (is_master_active $host_info) {
+                "🟢 ACTIVE"
+            } else {
+                "🔴 INACTIVE"
+            }
+
+            print $"  ($socket_name) - ($is_active)"
+        } else {
+            # If parsing fails, still show the socket but mark as unknown format
+            print $"  ($socket_name) - ❓ UNKNOWN FORMAT"
         }
-        
-        print $"  ($socket_name) - ($is_active)"
     }
 }
 
+
+###########################################################################################################################################################
+###########################################################################################################################################################
+#####################                                                     Aliases                                                   #######################
+###########################################################################################################################################################
+###########################################################################################################################################################
 
 export alias "ppo close" = close_current_master_connection
 export alias "ppo closeall" = close_all_master_connections  

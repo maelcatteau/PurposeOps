@@ -1,6 +1,6 @@
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-#####################                                          Fonctions helper internes                                            #######################
+#####################                                          Internal helper functions                                            #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 def get_context_file_path [] {
@@ -10,13 +10,13 @@ def get_context_file_path [] {
 export def load_context [] {
     let context_path = get_context_file_path
     if not ($context_path | path exists) {
-        # Créer le fichier de contexte par défaut s'il n'existe pas
+        # Create default context file if it doesn't exist
         create_default_context
     }
     open $context_path
 }
 
-# Sauvegarder le contexte
+# Save the context
 def save_context [context: record] {
     let context_path = get_context_file_path
     $context | to json | save -f $context_path
@@ -28,56 +28,54 @@ def prepare_hosts_for_fzf [config: record, current_host: string] {
     | each {|row|
         let status = if ($row.host == $current_host) { " 👉 CURRENT" } else { "" }
         let type_icon = if ($row.info.hostname == "localhost") { "🏠" } else { "🌐" }
-        
-        # Format similaire à vos containers : ICON │ HOST_NAME │ DESCRIPTION │ STATUS
+
+        # Format similar to your containers: ICON │ HOST_NAME │ DESCRIPTION │ STATUS
         $"($type_icon) │ ($row.host) │ ($row.info.name)($status)"
     }
 }
 
 def extract_host_from_fzf [selected_line: string] {
-    print $"🔍 Extraction depuis: '($selected_line)'"
-    
-    # Diviser par │ et nettoyer chaque partie
+    print $"🔍 Extracting from: '($selected_line)'"
+
+    # Split by │ and clean each part
     let parts = ($selected_line 
         | split row "│" 
         | each { |part| $part | str trim }
         | where $it != "")
-    
-    print $"📝 Parties nettoyées: ($parts)"
-    
-    # Structure attendue: [index, icône, nom_hôte, description]
-    # Le nom d'hôte est à l'index 2 (3ème élément)
+
+    print $"📝 Cleaned parts: ($parts)"
+
+    # Expected structure: [index, icon, host_name, description]
+    # Host name is at index 2 (3rd element)
     if ($parts | length) >= 3 {
         let host_name = ($parts | get 2)
-        print $"✅ Hôte extrait: '($host_name)'"
+        print $"✅ Extracted host: '($host_name)'"
         return $host_name
     }
-    
-    print $"❌ Format inattendu - pas assez de parties ($parts | length)"
+
+    print $"❌ Unexpected format - not enough parts ($parts | length)"
     return ""
 }
 
-
-# Logique interne pour changer d'hôte (factorisation)
+# Internal logic to change host (factorization)
 def set_host_internal [host: string, config: record] {
     let host_info = ($config.hosts | get $host)
 
-    # Créer le nouveau contexte avec l'hôte sélectionné
+    # Create new context with selected host
     let new_context = {
         host: {
             $host: $host_info
         }
     }
 
-    # Sauvegarder le contexte
+    # Save context
     save_context $new_context
     print $"📍 Context set to: ($host_info.name)"
 }
 
-
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-#####################                                             Fonctions publiques                                               #######################
+#####################                                             Public functions                                                  #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
@@ -85,14 +83,14 @@ export def create_default_context [] {
     let context_path = get_context_file_path
     let config = load_config
     let localhost_info = ($config.hosts | get localhost)
-    
+
     let default_context = {
         host: {
             localhost: $localhost_info
         }
     }
-    
-    # Créer le dossier s'il n'existe pas
+
+    # Create directory if it doesn't exist
     mkdir ($context_path | path dirname)
     $default_context | to json | save -f $context_path
 }
@@ -115,71 +113,70 @@ export def resolve_key_path [identity_file: string] {
     }
 }
 
-# Fonction pour changer d'hôte (avec fuzzy finder)
-export def set-host [host?: string] {  # <- Paramètre optionnel maintenant
+# Function to change host (with fuzzy finder)
+export def set-host [host?: string] {  # <- Optional parameter now
     let config = load_config
     let current_host = get-current-host
 
-    # Si un hôte est spécifié directement, utiliser l'ancienne logique
+    # If a host is specified directly, use the old logic
     if $host != null {
         if not ($host in $config.hosts) {
             print $"❌ Host '($host)' not found in configuration"
             print $"Available hosts: ($config.hosts | columns | str join ', ')"
             return
         }
-        
+
         set_host_internal $host $config
         return
     }
 
-    # Sinon, utiliser fzf pour la sélection interactive
+    # Otherwise, use fzf for interactive selection
     let hosts_info = prepare_hosts_for_fzf $config $current_host
-    
-    # Vérifier qu'on a des hôtes
+
+    # Check that we have hosts
     if ($hosts_info | is-empty) {
-        print "❌ Aucun hôte disponible dans la configuration"
+        print "❌ No hosts available in configuration"
         return
     }
 
-    # Sélection avec fzf
+    # Selection with fzf
     let selected = try {
-        $hosts_info | fzf --header="🖥️  Sélectionnez un hôte" --height=40%
+        $hosts_info | fzf --header="🖥️  Select a host" --height=40%
     } catch {
-        ""  # Si fzf est annulé
+        ""  # If fzf is cancelled
     }
 
-    # Vérifier la sélection
+    # Check selection
     if ($selected | str trim | is-empty) {
-        print "Opération annulée - aucun hôte sélectionné"
+        print "Operation cancelled - no host selected"
         return
     }
 
-    # Extraire le nom de l'hôte sélectionné (première colonne)
+    # Extract selected host name (first column)
     let selected_host = extract_host_from_fzf $selected
-    
-    # Changer vers l'hôte sélectionné
+
+    # Switch to selected host
     set_host_internal $selected_host $config
 }
 
-
-# Obtenir l'hôte actuel
+# Get current host
 export def get-current-host [] {
     let context = load_context
     $context.host | columns | first
 }
 
-# Obtenir les informations de l'hôte actuel
+# Get current host information
 export def get-current-host-info [] {
     let context = load_context
     let host_name = ($context.host | columns | first)
     $context.host | get $host_name
 }
 
-# Fonction pour lister les hôtes disponibles
+# Function to list available hosts
 export def list-hosts [] {
     let config = load_config
     let current_host = get-current-host
-    
+
     $config.hosts | transpose host info | each {|row|
         {
             host: $row.host
