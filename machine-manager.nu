@@ -1,15 +1,16 @@
 ###########################################################################################################################################################
 ###########################################################################################################################################################
+#####################                                                  Imports                                                      #######################
+###########################################################################################################################################################
+###########################################################################################################################################################
+
+export use context-manager.nu *
+
+###########################################################################################################################################################
+###########################################################################################################################################################
 #####################                                          Internal helper functions                                            #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-def get_context_file_path [] {
-    "~/dev/nu-modules/PurposeOps/context.json" | path expand
-}
-def get_config_file_path [] {
-    "~/dev/nu-modules/PurposeOps/config.json" | path expand
-}
-
 def extract_host_from_fzf [selected_line: string] {
 
     # Split by │ and clean each part
@@ -57,55 +58,6 @@ export def prepare_hosts_for_fzf [config: record, current_host: string] {
 
         # Format similar to your containers: ICON │ HOST_NAME │ DESCRIPTION │ STATUS
         $"($type_icon) │ ($row.host) │ ($row.info.name)($status)"
-    }
-}
-
-# Save the context
-export def save_context [context: record] {
-    let context_path = get_context_file_path
-    $context | to json | save -f $context_path
-}
-# Load the context
-export def load_context [] {
-    let context_path = get_context_file_path
-    if not ($context_path | path exists) {
-        # Create default context file if it doesn't exist
-        create_default_context
-    }
-    open $context_path
-}
-# Create the default context
-export def create_default_context [] {
-    let context_path = get_context_file_path
-    let config = load_config
-    let localhost_info = ($config.hosts | get localhost)
-
-    let default_context = {
-        host: {
-            localhost: $localhost_info
-        }
-    }
-
-    # Create directory if it doesn't exist
-    mkdir ($context_path | path dirname)
-    $default_context | to json | save -f $context_path
-}
-
-export def load_config [] {
-    let config_path = get_config_file_path
-    if not ($config_path | path exists) {
-        print "The file doesn't exist"
-    }
-    open $config_path
-}
-
-export def resolve_key_path [identity_file: string] {
-    if ($identity_file | str starts-with "~/") {
-        $identity_file | str replace "~" $env.HOME
-    } else if ($identity_file | str starts-with "./") {
-        $identity_file | path expand
-    } else {
-        $identity_file
     }
 }
 

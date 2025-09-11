@@ -31,16 +31,20 @@ def get_control_socket [host_info: record] {
     $"($control_dir)/($socket_name)"
 }
 
-# Function to resolve the key path (helper for identity file handling)
-def resolve_key_path [identity_file: string] {
-    $identity_file | path expand
-}
-
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 #####################                                             Public functions                                                  #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
+export def resolve_key_path [identity_file: string] {
+    if ($identity_file | str starts-with "~/") {
+        $identity_file | str replace "~" $env.HOME
+    } else if ($identity_file | str starts-with "./") {
+        $identity_file | path expand
+    } else {
+        $identity_file
+    }
+}
 
 # Function to check if a master connection exists and is active
 export def is_master_active [host_info: record] {

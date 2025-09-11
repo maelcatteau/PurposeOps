@@ -4,6 +4,7 @@ export use customer-manager.nu *
 export use prompt-manager.nu *
 export use ssh-manager.nu *
 export use docker-functions.nu *
+export use context-manager.nu *
 
 export def "ppos" [query?: string] {
     let commands = [
