@@ -6,28 +6,14 @@
 
 use customer-manager.nu *
 use machine-manager.nu *
-
-###########################################################################################################################################################
-###########################################################################################################################################################
-#####################                                          Internal helper functions                                            #######################
-###########################################################################################################################################################
-###########################################################################################################################################################
-def get_config_file_path [] {
-    "~/dev/nu-modules/PurposeOps/config.json" | path expand
-}
+use service-manager.nu *
+use config-loader.nu *
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 #####################                                             Public functions                                                  #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-export def load_config [] {
-    let config_path = get_config_file_path
-    if not ($config_path | path exists) {
-        print "The file doesn't exist"
-    }
-    open $config_path
-}
 # Function to create a new host in the config
 export def create_host [] {
     let config = load_config
@@ -97,7 +83,7 @@ export def delete_host [] {
     }
 }
 
-# Function to create a new customer - minimal version
+# Function to create a new customer
 export def create_customer [] {
     let config = load_config
     
@@ -114,7 +100,7 @@ export def create_customer [] {
     
     let new_customer_info = {
         abbreviation: $abbreviation
-        services: []
+        deployments: []
         hosts: [{ host_id: $host_id, path_on_host: $path_on_host }]
     }
     
@@ -147,18 +133,78 @@ export def delete_customer [] {
     }
     # Check selection
     if ($selected | str trim | is-empty) {
-        print "Operation cancelled - no host selected"
+        print "Operation cancelled - no customer selected"
         return
     }
     # Extract selected host name (first column)
     let selected_customer = extract_customer_from_fzf $selected
     let new_customers_list = ($config.customers | reject $selected_customer)
     let selected_customer_json = ($config.customers | get $selected_customer | to json)
-    print $"Do you want to confirm this list of hosts : ($selected_customer_json)"
+    print $"Do you want to confirm to delete this customer : ($selected_customer_json)"
     let validation = (input "[y|n] ? ")
     print $validation
     if $validation == "y" {
         let new_config = ($config | upsert customers { $new_customers_list } | save ./config.json -f) 
+    } else {
+        print "Operation cancelled, you haven't validated"
+    }
+}
+
+
+# Function to create a new service
+export def create_service [] {
+    let config = load_config
+    
+    let service_name = (input "Service name : ")
+    let template_dir_path = (input "Template directory path : ")
+    let template_compose_path = (input "Template docker compose path : ")
+    
+    let new_service_info = {
+        template_dir_path: $template_dir_path
+        template_compose_path: $template_compose_path
+        variables: []
+    }
+    
+    print ($new_service_info | to json --indent 2)
+    let validation = (input "Create? [y/n]: ")
+    
+    if $validation == "y" {
+        let new_service = $config | get services | insert $service_name $new_service_info
+        $config | upsert services $new_service | save ./config.json -f
+        print "✅ Done!"
+    }
+}
+
+# Function to delete an existing service
+export def delete_service [] {
+    let config = load_config
+    let services_list = prepare_services_for_fzf $config
+    # Check that we have services
+    if ($services_list | is-empty) {
+        print "❌ No hosts available in configuration"
+        return
+    }
+
+    # Selection with fzf
+    let selected = try {
+        $services_list | fzf --header="🖥️  Select a service"
+    } catch {
+        ""  # If fzf is cancelled
+    }
+    # Check selection
+    if ($selected | str trim | is-empty) {
+        print "Operation cancelled - no service selected"
+        return
+    }
+    # Extract selected host name (first column)
+    let selected_service = extract_service_from_fzf $selected
+    let new_services_list = ($config.services | reject $selected_service)
+    let selected_service_json = ($config.services | get $selected_service | to json)
+    print $"Do you want to confirm you want to deleted this service : ($selected_service_json)"
+    let validation = (input "[y|n] ? ")
+    print $validation
+    if $validation == "y" {
+        let new_config = ($config | upsert services { $new_services_list } | save ./config.json -f) 
     } else {
         print "Operation cancelled, you haven't validated"
     }
@@ -169,7 +215,9 @@ export def delete_customer [] {
 #####################                                                     Aliases                                                   #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-export alias "ppo chost" = create_host
-export alias "ppo dhost" = delete_host
-export alias "ppo ccustomer" = create_customer
-export alias "ppo dcustomer" = delete_customer
+export alias "ppo c h" = create_host
+export alias "ppo d h" = delete_host
+export alias "ppo c c" = create_customer
+export alias "ppo d c" = delete_customer
+export alias "ppo c s" = create_service
+export alias "ppo d s" = delete_service
