@@ -5,31 +5,38 @@ export use prompt-manager.nu *
 export use ssh-manager.nu *
 export use docker-functions.nu *
 export use context-manager.nu *
+export use config-loader.nu *
+export use service-manager.nu *
+export use deployment-manager.nu *
 
 export def "ppos" [query?: string] {
     let commands = [
         "ppo close - Close current SSH master connection"
         "ppo closeall - Close all SSH master connections"
-        "ppo lsconn - List active SSH master connections"
-        "ppo prompt - Get current prompt context"
-        "ppo phost - Get prompt host information"
-        "ppo toggle - Toggle prompt display"
-        "ppo host - Get current host detailed info"
-        "ppo hostname - Get current host name only"
-        "ppo lshost - List all configured hosts"
-        "ppo shost - Set/switch to a different host"
-        "ppo chost - Create a new host"
-        "ppo dstop - Stop Docker containers"
-        "ppo dstart - Start Docker containers"
-        "ppo drestart - Restart Docker containers"
-        "ppo dnetextract - Extract Docker networks info"
-        "ppo dps - Show Docker containers status"
-        "ppo dnls - List Docker networks"
-        "ppo customer - List customer selected in the context file"
-        "ppo cname - List the customer name selected in the context file"
-        "ppo scustomer - Set/Switch the customer currently selected in the context file"
-        "ppo ccustomer - Create a new customer"
-        "ppo dcustomer - Delete an existing customer"
+        "ppo ls conn - List active SSH master connections"
+        "ppo p - Get current prompt context"
+        "ppo p h - Get prompt host information"
+        "ppo t - Toggle prompt display"
+        "ppo h - Get current host detailed info"
+        "ppo h name - Get current host name only"
+        "ppo ls h - List all configured hosts"
+        "ppo s h - Set/switch to a different host"
+        "ppo c h - Create a new host"
+        "ppo d h - Delete an existing host"
+        "ppo d stop - Stop Docker containers"
+        "ppo d start - Start Docker containers"
+        "ppo d restart - Restart Docker containers"
+        "ppo d n extract - Extract Docker networks info"
+        "ppo d ps - Show Docker containers status"
+        "ppo d nls - List Docker networks"
+        "ppo c - List customer selected in the context file"
+        "ppo c name - List the customer name selected in the context file"
+        "ppo s c - Set/Switch the customer currently selected in the context file"
+        "ppo c c - Create a new customer"
+        "ppo d c - Delete an existing customer"
+        "ppo ls c - List all available customers"
+        "ppo ls s - Return the list of all available services"
+        "ppo ls d - Return the list of available deployments for the current customer"
     ]
 
     let selected = if (which fzf | is-not-empty) {

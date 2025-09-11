@@ -4,7 +4,8 @@
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-export use context-manager.nu *
+use context-manager.nu *
+use config-loader.nu *
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
@@ -116,7 +117,7 @@ export def get-current-host [] {
 # Get current host information
 export def get-current-host-info [] {
     let context = load_context
-    let host_name = ($context.host | columns | first)
+    let host_name = get-current-host
     $context.host | get $host_name
 }
 
@@ -142,7 +143,7 @@ export def list-hosts [] {
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-export alias "ppo host" = get-current-host-info
-export alias "ppo hostname" = get-current-host
-export alias "ppo lshost" = list-hosts
-export alias "ppo shost" = set-host
+export alias "ppo h" = get-current-host-info
+export alias "ppo h name" = get-current-host
+export alias "ppo ls h" = list-hosts
+export alias "ppo s h" = set-host

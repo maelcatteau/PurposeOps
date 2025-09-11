@@ -5,6 +5,9 @@
 ###########################################################################################################################################################
 
 use context-manager.nu *
+use customer-manager.nu *
+use machine-manager.nu *
+use service-manager.nu *
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
@@ -16,11 +19,9 @@ use context-manager.nu *
 export def get-prompt-context [] {
     try {
         let context = load_context
-        let host_name = ($context.host | columns | first)
-        let vps_name = ($context.host | get $host_name | get name)
-        let host_info = ($context.host | get $host_name)
-        let customer_name = ($context.customer | columns | first)
-        let customer_info = ($context.customer | get $customer_name)
+        let host_name = get-current-host
+        let host_info = get-current-host-info
+        let customer_info = get-current-customer-info
 
         if not ($context.prompt_show) {
             ""
@@ -31,7 +32,7 @@ export def get-prompt-context [] {
         if ($host_info.hostname == "localhost") {
             $"🏠 local - ($customer_info.abbreviation)"
         } else {
-            $"🌐 ($vps_name) - ($customer_info.abbreviation)"
+            $"🌐 ($host_info.name) - ($customer_info.abbreviation)"
         }
     } catch {
         "❓ unknown"
@@ -67,6 +68,6 @@ export def toggle-prompt [] {
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-export alias "ppo prompt" = get-prompt-context
-export alias "ppo phost" = get-prompt-host
-export alias "ppo toggle" = toggle-prompt
+export alias "ppo p" = get-prompt-context
+export alias "ppo p h" = get-prompt-host
+export alias "ppo t" = toggle-prompt

@@ -219,9 +219,9 @@ export def network_list [
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-export alias "ppo dstop" = docker_container_operation --stop
-export alias "ppo dstart" = docker_container_operation --start
-export alias "ppo drestart" = docker_container_operation --restart
-export alias "ppo dnetextract" = docker_container_operation --networks
-export alias "ppo dps" = status
-export alias "ppo dnls" = network_list
+export alias "ppo d stop" = docker_container_operation --stop
+export alias "ppo d start" = docker_container_operation --start
+export alias "ppo d restart" = docker_container_operation --restart
+export alias "ppo d n extract" = docker_container_operation --networks
+export alias "ppo d ps" = status
+export alias "ppo d nls" = network_list
