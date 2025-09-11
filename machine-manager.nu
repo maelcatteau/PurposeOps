@@ -14,7 +14,7 @@ def extract_host_from_fzf [selected_line: string] {
 
     # Split by │ and clean each part
     let parts = ($selected_line 
-        | split row "│" 
+        | split row "│"
         | each { |part| $part | str trim }
         | where $it != "")
 

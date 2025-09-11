@@ -1,9 +1,9 @@
-export use docker-functions.nu *
 export use machine-manager.nu *
-export use ssh-manager.nu *
-export use prompt-manager.nu *
 export use config-manager.nu *
-export use client-manager.nu *
+export use customer-manager.nu *
+export use prompt-manager.nu *
+export use ssh-manager.nu *
+export use docker-functions.nu *
 
 export def "ppos" [query?: string] {
     let commands = [
@@ -24,9 +24,9 @@ export def "ppos" [query?: string] {
         "ppo dnetextract - Extract Docker networks info"
         "ppo dps - Show Docker containers status"
         "ppo dnls - List Docker networks"
-        "ppo client - List client selected in the context file"
-        "ppo cname - List the client name selected in the context file"
-        "ppo sclient - Set/Switch the client currently selected in the context file"
+        "ppo customer - List customer selected in the context file"
+        "ppo cname - List the customer name selected in the context file"
+        "ppo scustomer - Set/Switch the customer currently selected in the context file"
         "ppo ccustomer - Create a new customer"
         "ppo dcustomer - Delete an existing customer"
     ]
