@@ -1,9 +1,54 @@
 ###########################################################################################################################################################
 ###########################################################################################################################################################
+#####################                                                  Imports                                                      #######################
+###########################################################################################################################################################
+###########################################################################################################################################################
+
+use context-manager.nu *
+use config-loader.nu *
+use machine-manager.nu *
+
+###########################################################################################################################################################
+###########################################################################################################################################################
 #####################                                          Internal helper functions                                            #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
+def set_customer_internal [customer: string, config: record] {
+    let context = load_context
+    let customer_info = ($config.customers | get $customer | reject deployments hosts)
+
+    # Create new context with selected host
+    let new_context = $context | upsert customer { $customer: $customer_info}
+
+    # Save context
+    save_context $new_context
+    print $"📍 Context set to: ($new_context.customer | columns | first)"
+}
+
+###########################################################################################################################################################
+###########################################################################################################################################################
+#####################                                             Public functions                                                  #######################
+###########################################################################################################################################################
+###########################################################################################################################################################
+
+# Check that the host is consistent with the customer
+export def check_host_customer_consistency [customer: string] {
+    let config = load_config
+    let context = load_context
+    let current_host = get-current-host
+    let customer_hosts = hosts_for_customer $customer
+    
+    $current_host in $customer_hosts
+}
+
+# Check the host for a given customer
+export def hosts_for_customer [customer: string] {
+    let config = load_config
+    $config.customers | get $customer | get hosts | get host_id
+}
+
+# Prepare the customers list for using it in fzf 
 export def prepare_customers_for_fzf [config: record, current_customer: string] {
     $config.customers
     | transpose customer_name customer_info
@@ -43,33 +88,16 @@ export def extract_customer_from_fzf [selected_line: string] {
     }
 }
 
-
-def set_customer_internal [customer: string, config: record] {
-    let context = load_context
-    let customer_info = ($config.customers | get $customer)
-
-    # Create new context with selected host
-    let new_context = $context | upsert customer { $customer: $customer_info}
-
-    # Save context
-    save_context $new_context
-    print $"📍 Context set to: ($new_context.customer | columns | first)"
-}
-###########################################################################################################################################################
-###########################################################################################################################################################
-#####################                                             Public functions                                                  #######################
-###########################################################################################################################################################
-###########################################################################################################################################################
 # Get current customer
 export def get-current-customer [] {
     let context = load_context
     $context.customer | columns | first
 }
 
-# Get current host information
+# Get current customer information
 export def get-current-customer-info [] {
     let context = load_context
-    let current_customer = ($context.customer | columns | first)
+    let current_customer = get-current-customer
     $context.customer | get $current_customer
 }
 
@@ -81,7 +109,6 @@ export def set-customer [customer?: string] {
     if $customer != null {
         if not ($customer in $config.customers) {
             print $"❌ Host '($customer)' not found in configuration"
-            print $"Available hosts: ($config.hosts | columns | str join ', ')"
             return
         }
 
@@ -110,11 +137,49 @@ export def set-customer [customer?: string] {
         return
     }
 
-    # Extract selected host name (first column)
+    # Extract selected customer name (first column)
     let selected_customer = extract_customer_from_fzf $selected
+    let current_host = get-current-host
+    let host_customer_consistency = check_host_customer_consistency $selected_customer
+    if $host_customer_consistency {
+        # Switch to selected customer
+        set_customer_internal $selected_customer $config
+    } else {
+        let correct_host = host_for_customer $selected_customer
+        print $"L'hôte actuel '($current_host)' n'est pas l'hote du client ($selected_customer), voulez vous changer d'hôte aussi ?"
+        let validation = (input "Valider ? [y|n] ")
+        if $validation == "y" {
+            set-host $correct_host
+            set_customer_internal $selected_customer $config
+        }
+    }
+    
+}
 
-    # Switch to selected host
-    set_customer_internal $selected_customer $config
+# Function to list available customers
+export def list-customers [] {
+    let config = load_config
+    let current_customer = get-current-customer
+
+    $config.customers 
+    | transpose customer_name customer_data
+    | each { |row|
+        # Gérer les déploiements (peut être absent pour certains clients)
+        let cleaned_deployments = if ("deployments" in ($row.customer_data | columns)) {
+            $row.customer_data.deployments | each { |deployment| 
+                $deployment | reject hosts 
+            }
+        } else {
+            []
+        }
+
+        {
+            customer_name: $row.customer_name,
+            abbreviation: $row.customer_data.abbreviation,
+            deployments: $cleaned_deployments,
+            current: ($row.customer_name == $current_customer)
+        }
+    }
 }
 
 ###########################################################################################################################################################
@@ -123,6 +188,7 @@ export def set-customer [customer?: string] {
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-export alias "ppo customer" = get-current-customer-info
-export alias "ppo cname" = get-current-customer
-export alias "ppo scustomer" = set-customer
+export alias "ppo c" = get-current-customer-info
+export alias "ppo c name" = get-current-customer
+export alias "ppo s c" = set-customer
+export alias "ppo ls c" = list-customers
