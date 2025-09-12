@@ -8,6 +8,7 @@ export use context-manager.nu *
 export use config-loader.nu *
 export use service-manager.nu *
 export use deployment-manager.nu *
+export use templater.nu *
 
 export def "ppos" [query?: string] {
     let commands = [

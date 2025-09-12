@@ -1,0 +1,17 @@
+services:
+  {{service_name}}:
+    image: vaultwarden/server:latest
+    container_name: "{{container_name}}"
+    restart: unless-stopped
+    environment:
+      DOMAIN: "{{domain}}"
+    volumes:
+      - "{{data_volume_path}}:/data/"
+    expose: 
+      - "{{exposed_port}}"
+    networks:
+      - {{network}}
+
+networks:
+  {{network}}:
+    external: true

@@ -1,0 +1,18 @@
+services:
+  {{service_name}}:
+    image: caddy:2-alpine
+    container_name: "{{container_name}}"
+    restart: unless-stopped
+    ports:
+      - "{{http_port}}:80"     # HTTP
+      - "{{https_port}}:443"   # HTTPS
+      - "{{admin_port}}:2019"  # Admin
+    networks:
+      {{networks_section}}
+    volumes:
+      - "{{config_volume_path}}:/etc/caddy"
+    environment:
+      - CADDY_ADMIN={{admin_bind}}
+
+networks:
+  {{networks_definition}}

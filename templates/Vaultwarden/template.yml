@@ -1,0 +1,50 @@
+variables:
+  service_name:
+    level: 0
+    parent: ""
+    type: "string"
+    required: true
+    description: "Nom du service docker choisi pour le déploiement"
+    default_pattern: "{{host_id}}-{{customer_abbrev}}-vaultwarden"
+  
+  container_name:
+    level: 1
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "Container name"
+    example: "vw-customer"
+    default_pattern: "vw-{{customer_abbrev}}"
+    
+  data_volume_path:
+    level: 1
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "Data path on host"
+    example: "./vw-data"
+
+  exposed_port:
+    level: 1
+    parent: "service_name"
+    type: "int"
+    required: true
+    description: "The port exposed behind your reverse proxy"
+    example: 80
+  
+  network: 
+    level: 1
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "The network used to link to the reverse proxy"
+    example: "caddy-network"
+
+  domain:
+    level: 2
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "Domain for Vaultwarden (with https://)"
+    example: "https://vault.customer.com"
+    validation: "^https?://.+"

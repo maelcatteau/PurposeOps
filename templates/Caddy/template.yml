@@ -1,0 +1,40 @@
+variables:
+  service_name:
+    description: "Nom du service Caddy"
+    example: "caddy"
+    level: 1
+
+  container_name:
+    description: "Nom du container"
+    example: "caddy-proxy"
+    level: 1
+
+  http_port:
+    description: "Port HTTP externe"
+    example: 80
+    level: 2
+
+  https_port:
+    description: "Port HTTPS externe" 
+    example: 443
+    level: 2
+
+  admin_port:
+    description: "Port admin Caddy"
+    example: 2019
+    level: 2
+
+  config_volume_path:
+    description: "Chemin vers la config Caddy sur l'hôte"
+    example: "/home/docker/caddy"
+    level: 3
+
+  admin_bind:
+    description: "Interface d'écoute pour l'admin"
+    example: "0.0.0.0:2019"
+    level: 3
+
+  networks:
+    description: "Liste des réseaux (séparés par des virgules)"
+    example: "caddy-portainer,caddy-frontend,caddy-homarr"
+    level: 4
