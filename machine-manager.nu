@@ -144,6 +144,6 @@ export def list-hosts [] {
 ###########################################################################################################################################################
 
 export alias "ppo h" = get-current-host-info
-export alias "ppo h name" = get-current-host
-export alias "ppo ls h" = list-hosts
-export alias "ppo s h" = set-host
+export alias "ppo hname" = get-current-host
+export alias "ppo lsh" = list-hosts
+export alias "ppo sh" = set-host

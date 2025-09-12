@@ -69,5 +69,5 @@ export def toggle-prompt [] {
 ###########################################################################################################################################################
 
 export alias "ppo p" = get-prompt-context
-export alias "ppo p h" = get-prompt-host
+export alias "ppo ph" = get-prompt-host
 export alias "ppo t" = toggle-prompt

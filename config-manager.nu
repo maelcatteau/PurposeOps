@@ -215,9 +215,9 @@ export def delete_service [] {
 #####################                                                     Aliases                                                   #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-export alias "ppo c h" = create_host
-export alias "ppo d h" = delete_host
-export alias "ppo c c" = create_customer
-export alias "ppo d c" = delete_customer
-export alias "ppo c s" = create_service
-export alias "ppo d s" = delete_service
+export alias "ppo ch" = create_host
+export alias "ppo dh" = delete_host
+export alias "ppo cc" = create_customer
+export alias "ppo dc" = delete_customer
+export alias "ppo cs" = create_service
+export alias "ppo ds" = delete_service

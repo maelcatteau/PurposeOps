@@ -189,6 +189,6 @@ export def list-customers [] {
 ###########################################################################################################################################################
 
 export alias "ppo c" = get-current-customer-info
-export alias "ppo c name" = get-current-customer
-export alias "ppo s c" = set-customer
-export alias "ppo ls c" = list-customers
+export alias "ppo cname" = get-current-customer
+export alias "ppo sc" = set-customer
+export alias "ppo lsc" = list-customers
