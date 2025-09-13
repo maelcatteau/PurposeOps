@@ -1,0 +1,3 @@
+[submodule "PurposeOps-config"]
+	path = PurposeOps-config
+	url = https://github.com/maelcatteau/PurposeOps-config.git
