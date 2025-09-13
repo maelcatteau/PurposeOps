@@ -111,14 +111,8 @@ export def set-host [host?: string] {  # <- Optional parameter now
 # Get current host
 export def get-current-host [] {
     let context = load_context
-    $context.host | columns | first
-}
-
-# Get current host information
-export def get-current-host-info [] {
-    let context = load_context
-    let host_name = get-current-host
-    $context.host | get $host_name
+    let host_name = $context.host | columns | first
+    { $host_name: ($context.host | get $host_name) }
 }
 
 # Function to list available hosts
@@ -143,7 +137,6 @@ export def list-hosts [] {
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-export alias "ppo h" = get-current-host-info
-export alias "ppo hname" = get-current-host
+export alias "ppo h" = get-current-host
 export alias "ppo lsh" = list-hosts
 export alias "ppo sh" = set-host

@@ -91,14 +91,12 @@ export def extract_customer_from_fzf [selected_line: string] {
 # Get current customer
 export def get-current-customer [] {
     let context = load_context
-    $context.customer | columns | first
-}
-
-# Get current customer information
-export def get-current-customer-info [] {
-    let context = load_context
-    let current_customer = get-current-customer
-    $context.customer | get $current_customer
+    if ($context.customer | is-empty) {
+        "No customer currently selected"
+    } else {
+        let customer_name = ($context.customer | columns | first)
+        { $customer_name: ($context.customer | get $customer_name)}
+    }
 }
 
 # Function to change customer (with fuzzy finder)
@@ -188,7 +186,6 @@ export def list-customers [] {
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-export alias "ppo c" = get-current-customer-info
-export alias "ppo cname" = get-current-customer
+export alias "ppo c" = get-current-customer
 export alias "ppo sc" = set-customer
 export alias "ppo lsc" = list-customers
