@@ -8,6 +8,7 @@ use customer-manager.nu *
 use machine-manager.nu *
 use service-manager.nu *
 use config-loader.nu *
+use config.nu *
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
@@ -16,7 +17,6 @@ use config-loader.nu *
 ###########################################################################################################################################################
 # Function to create a new host in the config
 export def create_host [] {
-    let config = load_config
     let new_host_name = (input "Enter the new host_name : ")
     let new_hostname = (input "Enter the new hostname (ip) : ")
     let new_user = (input "Enter the user for the new host : ")
@@ -39,8 +39,7 @@ export def create_host [] {
     print $"Voulez vous valider ce nouvel hote ? ($new_host_info_json)"
     let validation = (input "[y|n] ? :")
     if $validation == "y" {
-        let new_hosts = $config | get hosts | insert $new_host_name $new_host_info
-        $config | upsert hosts { $new_hosts } | save ./config.json -f
+        let new_hosts = open $hosts_config_path | insert $new_host_name $new_host_info | save $hosts_config_path -f
     } else {
         print "Opération annulée"
     }
@@ -50,7 +49,7 @@ export def create_host [] {
 # Function to delete an existing host 
 export def delete_host [] {
     let config = load_config
-    let current_host = get-current-host
+    let current_host = get-current-host | columns | first
     let hosts_info = prepare_hosts_for_fzf $config $current_host
     # Check that we have customers
     if ($hosts_info | is-empty) {
@@ -77,7 +76,7 @@ export def delete_host [] {
     let validation = (input "[y|n] ? ")
     print $validation
     if $validation == "y" {
-        let new_config = ($config | upsert hosts { $new_hosts_list } | save ./config.json -f) 
+        $new_hosts_list | save $hosts_config_path -f
     } else {
         print "Operation cancelled, you haven't validated"
     }
@@ -108,16 +107,14 @@ export def create_customer [] {
     let validation = (input "Create? [y/n]: ")
     
     if $validation == "y" {
-        let new_customers = $config | get customers | insert $customer_name $new_customer_info
-        $config | upsert customers $new_customers | save ./config.json -f
-        print "✅ Done!"
+        open $customers_config_path | insert $customer_name $new_customer_info | save $customers_config_path -f
     }
 }
 
 # Function to delete an existing customer
 export def delete_customer [] {
     let config = load_config
-    let current_customer = get-current-customer
+    let current_customer = get-current-customer | columns | first
     let customers_info = prepare_customers_for_fzf $config $current_customer
     # Check that we have customers
     if ($customers_info | is-empty) {
@@ -144,7 +141,7 @@ export def delete_customer [] {
     let validation = (input "[y|n] ? ")
     print $validation
     if $validation == "y" {
-        let new_config = ($config | upsert customers { $new_customers_list } | save ./config.json -f) 
+        $new_customers_list | save $customers_config_path -f
     } else {
         print "Operation cancelled, you haven't validated"
     }
@@ -169,9 +166,7 @@ export def create_service [] {
     let validation = (input "Create? [y/n]: ")
     
     if $validation == "y" {
-        let new_service = $config | get services | insert $service_name $new_service_info
-        $config | upsert services $new_service | save ./config.json -f
-        print "✅ Done!"
+        open $services_config_path | insert $service_name $new_service_info | save $services_config_path -f
     }
 }
 
@@ -181,7 +176,7 @@ export def delete_service [] {
     let services_list = prepare_services_for_fzf $config
     # Check that we have services
     if ($services_list | is-empty) {
-        print "❌ No hosts available in configuration"
+        print "❌ No services available in configuration"
         return
     }
 
@@ -204,7 +199,7 @@ export def delete_service [] {
     let validation = (input "[y|n] ? ")
     print $validation
     if $validation == "y" {
-        let new_config = ($config | upsert services { $new_services_list } | save ./config.json -f) 
+        $new_services_list  | save $services_config_path -f
     } else {
         print "Operation cancelled, you haven't validated"
     }
