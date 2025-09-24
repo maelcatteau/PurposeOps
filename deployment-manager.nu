@@ -5,7 +5,7 @@
 ###########################################################################################################################################################
 
 use context-manager.nu *
-use config-loader.nu *
+use config/ *
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
@@ -36,17 +36,13 @@ export def get-current-deployment-info [] {
 
 # Check the host for a given deployment id
 export def host_for_deployment [customer: string, service: string] {
-    let config = load_config
-    $config.customers | get $customer | get deployments | get hosts | get 0 | get host_id | get 0
+    open $customers_config_path | get $customer | get deployments | get hosts | get 0 | get host_id | get 0
 }
 
 # List all the deployments available for the current customer
 export def list_deployments_for_current_customer [] {
-    let config = load_config
-    let current_customer = get-current-customer
-    let deployments_list = ($config.customers | get $current_customer | get deployments | reject hosts)
-
-    $deployments_list
+    let current_customer = get-current-customer | columns | first
+    open $customers_config_path | get $current_customer | get deployments | reject hosts
 }
 
 ###########################################################################################################################################################

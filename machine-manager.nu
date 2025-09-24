@@ -5,7 +5,7 @@
 ###########################################################################################################################################################
 
 use context-manager.nu *
-use config-loader.nu *
+use config/ *
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
@@ -33,9 +33,9 @@ def extract_host_from_fzf [selected_line: string] {
 }
 
 # Internal logic to change host (factorization)
-def set_host_internal [host: string, config: record] {
+def set_host_internal [host: string] {
     let context = load_context
-    let host_info = ($config.hosts | get $host)
+    let host_info = (open $hosts_config_path | get $host)
 
     # Create new context with selected host
     let new_context = $context | upsert host { $host: $host_info}
@@ -50,8 +50,9 @@ def set_host_internal [host: string, config: record] {
 #####################                                             Public functions                                                  #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-export def prepare_hosts_for_fzf [config: record, current_host: string] {
-    $config.hosts 
+export def prepare_hosts_for_fzf [current_host: string] {
+    let hosts = open $hosts_config_path
+    $hosts 
     | transpose host info 
     | each {|row|
         let status = if ($row.host == $current_host) { " 👉 CURRENT" } else { "" }
@@ -64,23 +65,23 @@ export def prepare_hosts_for_fzf [config: record, current_host: string] {
 
 # Function to change host (with fuzzy finder)
 export def set-host [host?: string] {  # <- Optional parameter now
-    let config = load_config
-    let current_host = get-current-host
+    let current_host = get-current-host | columns | first
+    let hosts_list = open $hosts_config_path | columns
 
     # If a host is specified directly, use the old logic
     if $host != null {
-        if not ($host in $config.hosts) {
+        if not ($host in $hosts_list) {
             print $"❌ Host '($host)' not found in configuration"
-            print $"Available hosts: ($config.hosts | columns | str join ', ')"
+            print $"Available hosts: ($hosts_list)"
             return
         }
 
-        set_host_internal $host $config
+        set_host_internal $host
         return
     }
 
     # Otherwise, use fzf for interactive selection
-    let hosts_info = prepare_hosts_for_fzf $config $current_host
+    let hosts_info = prepare_hosts_for_fzf $current_host
 
     # Check that we have hosts
     if ($hosts_info | is-empty) {
@@ -105,7 +106,7 @@ export def set-host [host?: string] {  # <- Optional parameter now
     let selected_host = extract_host_from_fzf $selected
 
     # Switch to selected host
-    set_host_internal $selected_host $config
+    set_host_internal $selected_host
 }
 
 # Get current host
@@ -117,10 +118,10 @@ export def get-current-host [] {
 
 # Function to list available hosts
 export def list-hosts [] {
-    let config = load_config
+    let hosts = open $hosts_config_path
     let current_host = get-current-host
 
-    $config.hosts | transpose host info | each {|row|
+    $hosts | transpose host info | each {|row|
         {
             host: $row.host
             name: $row.info.name

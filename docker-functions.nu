@@ -92,7 +92,8 @@ def is_empty_content [content: string] {
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 export def run_docker_command [command: list] {
-    let host_info = get-current-host-info
+    let host_name = get-current-host | columns | first
+    let host_info = get-current-host | get $host_name
     let current_host = get-current-host
 
     if $current_host == "localhost" or $host_info.hostname == "localhost" {
