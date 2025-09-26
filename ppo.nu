@@ -3,10 +3,10 @@ export use customer-manager.nu *
 export use prompt-manager.nu *
 export use ssh-manager.nu *
 export use docker-functions.nu *
-export use context-manager.nu *
 export use service-manager.nu *
 export use deployment-manager.nu *
 export use templater.nu *
+export use context/ *
 export use config/ *
 
 export def "ppos" [query?: string] {
