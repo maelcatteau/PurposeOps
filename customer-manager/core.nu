@@ -1,5 +1,5 @@
 use ../context/context-manager.nu *
-use ../machine-manager.nu *
+use ../machine-manager/ *
 use ../config/ *
 use internal.nu *
 use validations.nu *

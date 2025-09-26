@@ -1,5 +1,5 @@
-export use machine-manager.nu *
-export use customer-manager.nu *
+export use machine-manager/ *
+export use customer-manager/ *
 export use ssh-manager.nu *
 export use docker-functions.nu *
 export use service-manager.nu *

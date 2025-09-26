@@ -1,4 +1,4 @@
-use ../machine-manager.nu *
+use ../machine-manager/ *
 use ../config/ *
 
 # Check that the host is consistent with the customer

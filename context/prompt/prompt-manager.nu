@@ -6,7 +6,7 @@
 
 use ../context-manager.nu *
 use ../../customer-manager/ *
-use ../../machine-manager.nu *
+use ../../machine-manager/ *
 use ../../service-manager.nu *
 
 ###########################################################################################################################################################
