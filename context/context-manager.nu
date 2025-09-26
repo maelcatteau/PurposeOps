@@ -14,7 +14,7 @@ use ../config/ *
 
 # Save the context
 export def save_context [context: record] {
-    $context | to json | save -f $context_path
+    $context | to yaml | save -f $context_path
 }
 # Load the context
 export def load_context [] {
@@ -38,5 +38,5 @@ export def create_default_context [] {
 
     # Create directory if it doesn't exist
     mkdir ($context_path | path dirname)
-    $default_context | to json | save -f $context_path
+    $default_context | to yaml | save -f $context_path
 }

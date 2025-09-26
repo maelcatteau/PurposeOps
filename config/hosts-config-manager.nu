@@ -24,8 +24,8 @@ export def create_host []: nothing -> nothing {
         arch: $new_arch
         docker_context: $docker_context
     }
-    let new_host_info_json = $new_host_info | to json
-    print $"Voulez vous valider ce nouvel hote ? ($new_host_info_json)"
+    let new_host_info_yaml = $new_host_info | to yaml
+    print $"Voulez vous valider ce nouvel hote ? ($new_host_info_yaml)"
     let validation = (input "[y|n] ? :")
     if $validation == "y" {
         open $hosts_config_path | insert $new_host_name $new_host_info | save $hosts_config_path -f

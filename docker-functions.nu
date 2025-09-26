@@ -62,18 +62,18 @@ def get_containers_list [
     format_string: string,
     --all(-a)  # Flag to include all containers (including stopped ones)
 ] {
-    # Get data in JSON format (no escaping issues)
+    # Get data in yaml format (no escaping issues)
     let raw_data = if $all {
-        run_docker_command ["ps" "-a" "--format" "json"]
+        run_docker_command ["ps" "-a" "--format" "yaml"]
     } else {
-        run_docker_command ["ps" "--format" "json"]
+        run_docker_command ["ps" "--format" "yaml"]
     }
 
     # Parse and format on Nushell side
     $raw_data 
     | lines 
     | where $it != ""
-    | each { |line| $line | from json }
+    | each { |line| $line | from yaml }
     | each { |container|
         # Extract the fields we want (equivalent to your format_string)
         $"($container.Names)\t($container.Image)\t($container.Status)"
@@ -161,7 +161,7 @@ export def docker_container_operation [
     # Execute operation according to type
     if $operation == "networks_extract" {
         print $"($config.verb) container: ($container_name)"
-        let networks = run_docker_command ["inspect" $container_name] | from json | get NetworkSettings.Networks
+        let networks = run_docker_command ["inspect" $container_name] | from yaml | get NetworkSettings.Networks
 
         if $env.LAST_EXIT_CODE == 0 {
             print $"✅ ($config.past_participle) container ($container_name)"

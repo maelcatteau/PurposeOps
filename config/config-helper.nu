@@ -24,7 +24,7 @@ export def confirm_deletion [
     let item_config = $config | get $selected
     print $"Do you want to delete this ($item_type):"
     print $"Name: ($selected)"
-    print $"Configuration: ($item_config | to json --indent 2)"
+    print $"Configuration: ($item_config | to yaml)"
     
     (input "[y|n] ? ") == "y"
 }

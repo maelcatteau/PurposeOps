@@ -1,7 +1,7 @@
 ./controlmasters
 
-config/config.json.first
-config/context.json
-config/hosts.json
-config/customers.json
-config/services.json
+config/config.yaml.first
+config/context.yaml
+config/hosts.yaml
+config/customers.yaml
+config/services.yaml

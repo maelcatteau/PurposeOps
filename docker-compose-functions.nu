@@ -102,7 +102,7 @@ export def docker_compose_stack_operation [
     # Execute operation according to type
     if $operation == "networks_extract" {
         print $"($config.verb) container: ($container_name)"
-        let networks = run_docker_command ["inspect" $container_name] | from json | get NetworkSettings.Networks
+        let networks = run_docker_command ["inspect" $container_name] | from yaml | get NetworkSettings.Networks
 
         if $env.LAST_EXIT_CODE == 0 {
             print $"✅ ($config.past_participle) container ($container_name)"

@@ -13,7 +13,7 @@ export def create_service []: nothing -> nothing {
         variables: []
     }
     
-    print ($new_service_info | to json --indent 2)
+    print ($new_service_info | to yaml)
     let validation = (input "Create? [y/n]: ")
     
     if $validation == "y" {

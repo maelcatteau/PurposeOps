@@ -21,7 +21,7 @@ export def create_customer []: nothing -> nothing {
         hosts: [{ host_id: $host_id, path_on_host: $path_on_host }]
     }
     
-    print ($new_customer_info | to json --indent 2)
+    print ($new_customer_info | to yaml)
     let validation = (input "Create? [y/n]: ")
     
     if $validation == "y" {
