@@ -1,11 +1,11 @@
 export use machine-manager.nu *
 export use customer-manager.nu *
-export use prompt-manager.nu *
 export use ssh-manager.nu *
 export use docker-functions.nu *
 export use service-manager.nu *
 export use deployment-manager.nu *
 export use templater.nu *
+export use customer-manager/ *
 export use context/ *
 export use config/ *
 

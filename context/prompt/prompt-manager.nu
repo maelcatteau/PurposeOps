@@ -5,7 +5,7 @@
 ###########################################################################################################################################################
 
 use ../context-manager.nu *
-use ../../customer-manager.nu *
+use ../../customer-manager/ *
 use ../../machine-manager.nu *
 use ../../service-manager.nu *
 
