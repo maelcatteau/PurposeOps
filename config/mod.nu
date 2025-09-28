@@ -6,9 +6,9 @@ export use config-helper.nu *
 export use config.nu *
 
 
-export alias "ppo ch" = create_host
-export alias "ppo dh" = delete host
-export alias "ppo cc" = create_customer
-export alias "ppo dc" = delete customer
-export alias "ppo cs" = create_service
-export alias "ppo ds" = delete service
+export alias "ch" = create_host
+export alias "dh" = delete host
+export alias "cc" = create_customer
+export alias "dc" = delete customer
+export alias "cs" = create_service
+export alias "ds" = delete service

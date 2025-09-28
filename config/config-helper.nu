@@ -12,7 +12,7 @@ export def select_item [
         return ""
     }
     
-    $items | columns | input list --fuzzy $"Select ($item_type) to delete:"
+    $items | columns | input list --fuzzy $"Select ($item_type) :"
 }
 
 # Function to confirm the deletion of an item

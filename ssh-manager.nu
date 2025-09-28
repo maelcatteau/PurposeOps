@@ -301,6 +301,6 @@ export def list_master_connections [] {
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-export alias "ppo close" = close_current_master_connection
-export alias "ppo closeall" = close_all_master_connections  
-export alias "ppo lsconn" = list_master_connections
+export alias "close" = close_current_master_connection
+export alias "closeall" = close_all_master_connections  
+export alias "lsconn" = list_master_connections
