@@ -1,11 +1,10 @@
 export use machine-manager/ *
 export use customer-manager/ *
 export use ssh-manager.nu *
-export use docker-functions.nu *
+export use docker/ *
 export use service-manager.nu *
-export use deployment-manager.nu *
 export use templater.nu *
-export use customer-manager/ *
+export use deployment-manager/ *
 export use context/ *
 export use config/ *
 
@@ -15,7 +14,6 @@ export def "ppos" [query?: string] {
         "closeall - Close all SSH master connections"
         "ls conn - List active SSH master connections"
         "p - Get current prompt context"
-        "ph - Get prompt host information"
         "t - Toggle prompt display"
         "h - Get current host detailed info"
         "hname - Get current host name only"
@@ -36,7 +34,11 @@ export def "ppos" [query?: string] {
         "dc - Delete an existing customer"
         "lsc - List all available customers"
         "lss - Return the list of all available services"
+        "sd - Set/switch the deployment currently selected in the context file"
         "lsd - Return the list of available deployments for the current customer"
+        "pde - Get current deployment id"
+        "pdei - Get current deployment full info"
+        "backup run - Run a backup for the currently selected customer/deployment"
     ]
 
     let selected = if (which fzf | is-not-empty) {
@@ -64,4 +66,3 @@ export def "ppos" [query?: string] {
         nu -c $"overlay use ($ppo_file); ($command)"
     }
 }
-
