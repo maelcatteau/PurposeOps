@@ -53,6 +53,25 @@ deployments, DB credentials, services). Changes to data (adding a host/customer/
 in that submodule too. Note: the top-level `.gitignore` still lists `config/*.yaml` paths from before
 this submodule split — those entries are stale/dead and don't match anything under `config/` anymore.
 
+### Creating config entries (customer/host/service/deployment)
+
+`config/` has the CRUD-creation trio for top-level config objects: `create_customer` (`cc`),
+`create_host` (`ch`), `create_service` (`cs`) — each interactively prompts, previews the record as YAML,
+and on confirmation does `open $x_config_path | insert <name> <record> | save $x_config_path -f`.
+`deployment-manager/core.nu` follows the same pattern for `create_deployment` (`cdep`), except a
+deployment isn't top-level — it appends into the **currently selected customer's** `deployments` list
+(`sc <customer>` first), via `create_deployment_internal` in `internal.nu`. It validates the host exists
+and that the new `deployment_id` isn't already used by *any* customer (ids are looked up globally, e.g.
+by `host_for_deployment`), and only prompts for the DB-backup fields (`container_name`,
+`db_container_name`, `database_name`, `db_credentials`) if you say the deployment has a database —
+those fields are what `customer-manager/backup.nu` requires, so skip them for non-DB services like
+Vaultwarden/Caddy.
+
+Any `open | insert | save` round-trip on a YAML config file re-serializes the **whole file** in
+Nushell's own style: it strips inline comments, normalizes indentation, and switches quoting (e.g.
+`"5432"` → `'5432'`). No data loss, but don't be surprised if a `create_*` command reformats unrelated
+parts of the file or drops a comment you'd left in `customers.yaml`.
+
 ### Remote execution model
 
 Everything that touches a remote host goes through `ssh-manager.nu`'s SSH **ControlMaster** connection

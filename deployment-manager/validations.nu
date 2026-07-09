@@ -63,6 +63,23 @@ export def host_for_deployment [deployment_id: string] {
     return null
 }
 
+# Check if a deployment_id is already used by any customer (les ids doivent être uniques,
+# car host_for_deployment et les autres lookups cherchent par id sur l'ensemble des clients)
+export def deployment_id_exists [deployment_id: string] {
+    let customers = (open $customers_config_path)
+
+    for $cust in ($customers | columns) {
+        let deps = ($customers | get $cust | get -o deployments)
+        if ($deps | is-empty) { continue }
+
+        if ($deps | where ($it.deployment_id == $deployment_id) | is-not-empty) {
+            return true
+        }
+    }
+
+    return false
+}
+
 # List all the deployments available for the current customer (Pour la sélection interactive)
 export def list_deployments_for_current_customer [] {
     let current_customer = (get-current-customer | columns | first)

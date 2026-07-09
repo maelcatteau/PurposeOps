@@ -34,6 +34,15 @@ export def set_deployment_internal [deployment_id: string] {
     let service_name = ($deployment_record.service_name)
     let host_id = ($deployment_record.hosts | get 0.host_id)
     print $"📍 Déploiement actif : ($service_name)"
-    print $" ID : ($deployment_id)" 
+    print $" ID : ($deployment_id)"
     print $" sur hôte "($host_id)""
+}
+
+# Internal helper function to persist a new deployment under a customer
+export def create_deployment_internal [customer_name: string, deployment: record] {
+    let customers = (open $customers_config_path)
+    let existing_deployments = ($customers | get $customer_name | get -o deployments | default [])
+    let updated_customer = ($customers | get $customer_name | upsert deployments ($existing_deployments | append $deployment))
+
+    $customers | upsert $customer_name $updated_customer | save $customers_config_path -f
 }

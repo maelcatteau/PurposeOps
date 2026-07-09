@@ -67,3 +67,80 @@ export def set-deployment [deployment_id?: string] {
         }
     }
 }
+
+# Function to create a new deployment for the currently selected customer
+export def create_deployment []: nothing -> nothing {
+    let ctx = load_context
+
+    if ($ctx | get customer | columns | is-empty) {
+        print "❌ Aucun client sélectionné. Utilisez 'sc <client>' d'abord."
+        return
+    }
+    let customer_name = ($ctx | get customer | columns | first)
+
+    let hosts = (open $hosts_config_path)
+
+    print $"📍 Création d'un déploiement pour : ($customer_name)"
+
+    let service_name = (input "Service name (ex: Odoo CE, Vaultwarden): ")
+    let host_id = (input "Host ID: ")
+
+    if not ($host_id in ($hosts | columns)) {
+        print $"❌ Host '($host_id)' introuvable ! Hôtes disponibles : ($hosts | columns)"
+        return
+    }
+
+    let path_for_service = (input "Path for service on host: ")
+    let path_for_docker_compose = (input "Path for docker-compose file: ")
+    let deployment_id = (input "Deployment id (unique): ")
+
+    if (deployment_id_exists $deployment_id) {
+        print $"❌ Le deployment_id '($deployment_id)' est déjà utilisé par un autre déploiement."
+        return
+    }
+
+    mut new_deployment = {
+        service_name: $service_name
+        hosts: [{
+            host_id: $host_id
+            path_for_service: $path_for_service
+            path_for_docker_compose: $path_for_docker_compose
+        }]
+        deployment_id: $deployment_id
+    }
+
+    # Champs optionnels pour les déploiements avec une base de données à sauvegarder (ex: Odoo)
+    let has_db = (input "Ce déploiement a-t-il une base de données à sauvegarder ? [y/n]: ")
+    if $has_db == "y" {
+        let container_name = (input "Container name: ")
+        let db_container_name = (input "DB container name: ")
+        let database_name = (input "Database name: ")
+        let db_host = (input "DB credentials - host: ")
+        let db_port = (input "DB credentials - port: ")
+        let db_user = (input "DB credentials - user: ")
+        let db_password = (input "DB credentials - password: ")
+
+        $new_deployment = (
+            $new_deployment
+            | insert container_name $container_name
+            | insert db_container_name $db_container_name
+            | insert database_name $database_name
+            | insert db_credentials {
+                host: $db_host
+                port: $db_port
+                user: $db_user
+                password: $db_password
+            }
+        )
+    }
+
+    print ($new_deployment | to yaml)
+    let validation = (input "Créer ce déploiement ? [y/n]: ")
+
+    if $validation == "y" {
+        create_deployment_internal $customer_name $new_deployment
+        print $"✅ Déploiement '($deployment_id)' créé pour '($customer_name)'"
+    } else {
+        print "❌ Opération annulée"
+    }
+}
