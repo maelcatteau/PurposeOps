@@ -83,9 +83,21 @@ hosts it builds a single shell command string and sends it over the ControlMaste
 argument is individually shell-quoted** before joining (via a local `shell-quote` helper) — this matters
 because any unquoted argument containing spaces (e.g. a `sh -c "multi word script"` payload) gets split
 apart by the remote shell and silently mangled. When adding new remote-executing code, either reuse
-`run_docker_command`, or if you need a raw (non-`docker`) remote shell command, follow the
-`exec-remote-shell` pattern in `customer-manager/backup.nu` (quote/build the string yourself and call
-`run_with_master` directly) rather than shelling out locally.
+`run_docker_command`, or if you need a raw (non-`docker`) remote shell command, use `run_with_master`
+directly rather than shelling out locally.
+
+`customer-manager/backup.nu` has module-level `exec-remote` / `exec-remote-checked` (docker commands)
+and `exec-remote-shell` / `exec-remote-shell-checked` (raw host shell commands) helpers, each taking
+`host_info: record` as an explicit parameter — reuse these for any new backup/restore-adjacent remote
+work rather than re-deriving the same error-checking boilerplate. `resolve-remote-path` in the same file
+handles the `~` gotcha below and should be used any time a path is built for a remote command.
+
+`backup.nu` also has `backup restore` (engine: `do-generic-restore`), which restores a `backup run`
+archive into the **currently selected deployment** — a backup can come from a totally different
+customer/deployment (the archive's `.sql`/`_fs.tar.gz` filenames encode the *source* database name, not
+the target), so restore resolves the target database/containers from context same as backup does, but
+takes the backup file as an explicit argument. It's destructive (`DROP DATABASE` on the target) and asks
+for confirmation unless `--force` is passed.
 
 ### `docker-compose-functions.nu` is correct but not wired in
 
@@ -108,7 +120,25 @@ not re-exported, so anything outside `docker/` that needs `run_docker_command`, 
   `$"... (depuis ($x)) ..."` does not print a literal `(depuis ...)` — the outer unescaped `(` starts a
   command-substitution, so Nushell tries to run a command literally named `depuis` and fails with
   `External command failed`/`command not found`. Always escape literal parens in `$"..."` as `\(` `\)`
-  (see the working examples in `customer-manager/backup.nu`, e.g. `\(code ($result.exit_code)\)`).
+  (see the working examples in `customer-manager/backup.nu`, e.g. `\(code ($result.exit_code)\)`). This
+  bites hardest when building a *remote shell script as a Nushell string* and you want a literal bash
+  `$(...)` command substitution in it (e.g. `SRC_DIR=$(ls ...)`) — the `$` doesn't protect the `(` from
+  Nushell's own interpolation, so write `$\(ls ...\)` to get a literal `$(ls ...)` in the resulting
+  string for the remote shell to interpret. Otherwise Nushell runs `ls` itself, immediately, against
+  whatever literal (unexpanded) path is inside — a `Not found` error with no further context.
+- **A `~` inside a remote path only expands if the shell actually sees it unquoted.** Any path built for
+  a remote command that gets wrapped in single quotes (needed to keep it one shell word) will NOT have
+  its `~` expanded by the remote shell — single quotes suppress tilde-expansion same as they suppress
+  variable expansion. `| path expand` doesn't help either since that resolves the *local* laptop's `~`,
+  not the remote SSH user's. Use `resolve-remote-path` in `customer-manager/backup.nu` (replaces `~` with
+  a hardcoded `/home/ngner`) before embedding a `~/...` path in any remote command string.
+- **`docker exec` requires the container to be running; `docker cp` doesn't.** If a workflow needs to
+  stop a container (e.g. to release DB connections before a `DROP DATABASE`), anything that needs to
+  touch files *inside* that container in the meantime has to go through `docker cp` (host ⇄ container,
+  works on a stopped container) rather than `docker exec ... sh -c ...`, which fails with "container ...
+  is not running". `backup restore`'s filestore-restore step does the tar extraction on the **host**
+  shell and only uses `docker cp` while the app container is stopped, saving `docker exec`-only work
+  (like `chown`) for after it's restarted.
 - **`docker cp` and `docker exec` can disagree on file ownership.** Files copied into a container via
   `docker cp` land owned by whatever UID performed the copy, which may not match the container's default
   `docker exec` user — a plain `rm` cleanup can fail with "Operation not permitted" *silently* if the

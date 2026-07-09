@@ -39,6 +39,7 @@ export def "ppos" [query?: string] {
         "pde - Get current deployment id"
         "pdei - Get current deployment full info"
         "backup run - Run a backup for the currently selected customer/deployment"
+        "backup restore - Restore a backup into the currently selected deployment (needs <backup_file>, run directly)"
     ]
 
     let selected = if (which fzf | is-not-empty) {
