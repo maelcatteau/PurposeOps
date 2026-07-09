@@ -78,7 +78,7 @@ export def docker_compose_stack_operation [
     }
 
     # Check if containers are available
-    if (is_empty_content $containers_list) {
+    if ($containers_list | is-empty) {
         print $"No containers available for ($operation)"
         return
     }
@@ -91,7 +91,7 @@ export def docker_compose_stack_operation [
     }
 
     # Check selection
-    if (is_empty_content $selected) {
+    if ($selected | is-empty) {
         print "Operation cancelled - no container selected"
         return
     }
