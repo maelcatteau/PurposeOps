@@ -39,12 +39,17 @@ export def set-customer [customer?: string] {
     if $host_customer_consistency {
         set_customer_internal $selected_customer
     } else {
-        let correct_host = hosts_for_customer $selected_customer
+        # hosts_for_customer retourne la liste de tous les hosts du client (utilisée pour
+        # la vérification d'appartenance dans check_host_customer_consistency) ; ici on ne
+        # veut basculer que sur le premier, un client n'ayant en pratique qu'un seul host.
+        let correct_host = (hosts_for_customer $selected_customer | first)
         print $"L'hôte actuel '($current_host)' n'est pas l'hote du client ($selected_customer), voulez vous changer d'hôte aussi ?"
         let validation = (input "Valider ? [y|n] ")
         if $validation == "y" {
             set-host $correct_host
             set_customer_internal $selected_customer
+        } else {
+            print "⚠️ Changement de client annulé. L'hôte reste inchangé."
         }
     }
 }
