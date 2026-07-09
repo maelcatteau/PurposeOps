@@ -4,7 +4,9 @@
 ###########################################################################################################################################################
 ###########################################################################################################################################################
 
-use customer-manager/ *
+use docker/core.nu *
+use docker/ui.nu *
+use docker/operations.nu with_host_info
 
 ###########################################################################################################################################################
 ###########################################################################################################################################################
@@ -15,7 +17,7 @@ use customer-manager/ *
 # Helper function to select the right information for the right type of operation
 def get_config [operation: string] {
     match $operation {
-        "up" => {
+        "start" => {
             need_all: true
             header: "Select a stack to up :"
             verb: "Up'ing"
@@ -44,15 +46,15 @@ def get_config [operation: string] {
 #####################                                             Public functions                                                  #######################
 ###########################################################################################################################################################
 ###########################################################################################################################################################
-export def run_docker_compose_command [command: list] {
+export def run_docker_compose_command [command: list, host_info: record] {
     let docker_compose_command = (["compose"] | append $command)
-    run_docker_command $docker_compose_command
+    run_docker_command $docker_compose_command $host_info
 }
 
-# Generic function for Docker operations
+# Generic function for Docker Compose stack operations
 export def docker_compose_stack_operation [
     --up(-u),      # Flag to up a stack
-    --down(-d),       # Flag to down  
+    --down(-d),       # Flag to down
     --restart(-r),    # Flag to restart
 ] {
     # Determine operation based on flags
@@ -63,64 +65,39 @@ export def docker_compose_stack_operation [
     } else if $restart {
         "restart"
     } else {
-        print "❌ You must specify an operation: --start, --stop, --restart, or --networks"
+        print "❌ You must specify an operation: --up, --down, or --restart"
         return
     }
 
     # Configuration for each operation
     let config = get_config $operation
 
-    # Get containers
-    let containers_list = if $config.need_all {
-        get_containers_list "{{.Names}}\t{{.Image}}\t{{.Status}}" --all
-    } else {
-        get_containers_list "{{.Names}}\t{{.Image}}\t{{.Status}}"
-    }
+    with_host_info {|host_info|
+        # Get containers
+        let containers_list = get_containers $config.need_all $host_info
 
-    # Check if containers are available
-    if ($containers_list | is-empty) {
-        print $"No containers available for ($operation)"
-        return
-    }
-
-    # Selection with fzf
-    let selected = try {
-        $containers_list | lines | fzf --header=$config.header
-    } catch {
-        ""  # If fzf is cancelled, return empty string
-    }
-
-    # Check selection
-    if ($selected | is-empty) {
-        print "Operation cancelled - no container selected"
-        return
-    }
-
-    # Extract container name
-    let container_name = get_container_name_from_fzf $selected
-
-    # Execute operation according to type
-    if $operation == "networks_extract" {
-        print $"($config.verb) container: ($container_name)"
-        let networks = run_docker_command ["inspect" $container_name] | from json | get NetworkSettings.Networks
-
-        if $env.LAST_EXIT_CODE == 0 {
-            print $"✅ ($config.past_participle) container ($container_name)"
-            return $networks
-        } else {
-            print $"❌ Failed to extract networks from container ($container_name)"
+        # Check if containers are available
+        if ($containers_list | is-empty) {
+            print $"No containers available for ($operation)"
             return
         }
-    } else {
-        # Standard operations (start, stop, restart)
-        print $"($config.verb) container: ($container_name)"
-        run_docker_command [$operation $container_name]
+
+        # Selection
+        let container_name = select_container $containers_list $config.header
+        if ($container_name | is-empty) {
+            print "Operation cancelled - no container selected"
+            return
+        }
+
+        # Execute operation
+        print (format_operation_message $container_name $config.verb)
+        run_docker_compose_command [$operation $container_name] $host_info
 
         # Check result
         if $env.LAST_EXIT_CODE == 0 {
-            print $"✅ Container ($container_name) ($config.past_participle) successfully"
+            print (format_success_message $container_name $config.past_participle)
         } else {
-            print $"❌ Failed to ($operation) container ($container_name)"
+            print (format_error_message $container_name $operation)
         }
     }
 }

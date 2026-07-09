@@ -68,15 +68,20 @@ apart by the remote shell and silently mangled. When adding new remote-executing
 `exec-remote-shell` pattern in `customer-manager/backup.nu` (quote/build the string yourself and call
 `run_with_master` directly) rather than shelling out locally.
 
-### Known architectural inconsistency (mid-refactor)
+### `docker-compose-functions.nu` is correct but not wired in
 
-The repo is actively being split from flat top-level files into subsystem directories (see git history:
-`docker-functions.nu` → `docker/`, `deployment-manager.nu` → `deployment-manager/`, etc.). Two files have
-**not** been migrated and are stale relative to the current `docker/core.nu` API:
-`docker-compose-functions.nu` and `service-manager.nu`'s `docker_compose_stack_operation` still call
-`run_docker_command [...]` with a single list argument (the old pre-`host_info` signature) and reference
-`get_containers_list`, which no longer exists (it lived in the now-deleted `docker-functions.nu`). Treat
-these as broken/pending-refactor rather than a reference implementation.
+`docker-compose-functions.nu` (compose start/stop/restart for a single service, picked interactively)
+has been updated to match the current `docker/core.nu` API (`with_host_info` + `get_containers` +
+`select_container`, `host_info` threaded through `run_docker_command`), same pattern as
+`docker/operations.nu`'s `docker_container_operation`. It is **not** exported from `ppo.nu` though —
+there's no `export use docker-compose-functions.nu *` line, so `docker_compose_stack_operation` is
+currently unreachable from the `ppo` CLI. This was left alone deliberately; wire it in (with aliases,
+following the `dstop`/`dstart`/`drestart` pattern in `docker/mod.nu`) if/when it's actually needed.
+
+Note `docker/mod.nu` only re-exports `operations.nu *` and `status.nu *` — `core.nu` and `ui.nu` are
+not re-exported, so anything outside `docker/` that needs `run_docker_command`, `get_containers`,
+`select_container`, etc. must `use docker/core.nu *` / `use docker/ui.nu *` directly rather than
+`use docker/ *`.
 
 ## Gotchas specific to this codebase (learned from real bugs, not theoretical)
 
