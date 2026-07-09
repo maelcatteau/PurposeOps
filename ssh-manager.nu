@@ -72,37 +72,48 @@ export def is_master_active [host_info: record] {
 export def create_master_connection [host_info: record] {
     let socket_path = get_control_socket $host_info
     let ssh_target = $"($host_info.user)@($host_info.hostname)"
-
     print $"🔄 Creating master connection to ($ssh_target)..."
 
-    # Build SSH arguments
+    if ($socket_path | path exists) and (not (is_master_active $host_info)) {
+        print $"🧹 Nettoyage d'un socket orphelin..."
+        rm $socket_path
+    }
+
     let ssh_args = [
-        "-M"                          # Master mode
-        "-N"                          # No command (just connection)
-        "-f"                          # Background
-        "-S" $socket_path             # Socket path
-        "-p" $host_info.port          # Port
+        "-M" "-N" "-f" "-n"
+        "-S" $socket_path
+        "-p" ($host_info.port | into string)
+        "-o" "StrictHostKeyChecking=no"
+        "-o" "ConnectTimeout=10"
     ]
 
-    # Add private key if specified
-    let ssh_args = if ($host_info.identity_file != "") {
-        $ssh_args | append ["-i" $host_info.identity_file]
+    let ssh_args = if (($host_info.identity_file | is-not-empty) and ($host_info.identity_file != "")) {
+        let key_path = (resolve_key_path $host_info.identity_file)
+        ["-i", $key_path] | append $ssh_args
     } else {
         $ssh_args
     }
 
-    # Create master connection
-    let result = try {
+    # FIX : on capture explicitement l'échec ici, car -f peut retourner un code non-nul
+    # de façon bénigne. On ne veut jamais qu'une erreur ici fasse planter tout le reste ;
+    # le vrai verdict se fait juste après via is_master_active.
+    try {
         run-external "ssh" ...$ssh_args $ssh_target
-        true
-    } catch { |err|
-        print $"❌ Failed to create master connection: ($err.msg)"
-        false
+    } catch { |e|
+        print $"⚠️ ssh -M a retourné une erreur (potentiellement bénigne) : ($e.msg)"
     }
 
-    $result
-}
+    sleep 500ms
 
+    if (is_master_active $host_info) {
+        print $"✅ Master connection established."
+        return true
+    } else {
+        print $"❌ Échec création master : le socket existe mais est inactif."
+        if ($socket_path | path exists) { rm $socket_path }
+        return false
+    }
+}
 # Function to execute a command via the master connection
 export def run_with_master [host_info: record, command: string] {
     let socket_path = get_control_socket $host_info
