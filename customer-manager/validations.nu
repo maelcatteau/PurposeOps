@@ -3,7 +3,7 @@ use ../config/ *
 
 # Check that the host is consistent with the customer
 export def check_host_customer_consistency [customer: string] {
-    let current_host = get-current-host
+    let current_host = get-current-host | columns | get 0
     let customer_hosts = hosts_for_customer $customer
     $current_host in $customer_hosts
 }

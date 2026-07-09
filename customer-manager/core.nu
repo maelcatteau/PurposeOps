@@ -39,7 +39,7 @@ export def set-customer [customer?: string] {
     if $host_customer_consistency {
         set_customer_internal $selected_customer
     } else {
-        let correct_host = host_for_customer $selected_customer
+        let correct_host = hosts_for_customer $selected_customer
         print $"L'hôte actuel '($current_host)' n'est pas l'hote du client ($selected_customer), voulez vous changer d'hôte aussi ?"
         let validation = (input "Valider ? [y|n] ")
         if $validation == "y" {
