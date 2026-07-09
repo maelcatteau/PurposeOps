@@ -5,7 +5,7 @@
 ###########################################################################################################################################################
 
 use ../context-manager.nu *
-use ../../customer-manager/ *
+use ../../customer-manager/core.nu get-current-customer
 use ../../machine-manager/ *
 use ../../service-manager.nu *
 
@@ -51,7 +51,9 @@ export def get-prompt-context [] {
 }
 
 # Function to toggle on and off the prompt
-export def toggle-prompt [] {
+# Ne permet pas de sélectionner les élements du prompt pour l'instant
+#
+export def toggle-prompt []: nothing -> nothing {
     let context = load_context
     let new_context = $context | upsert prompt_show (not $context.prompt_show)
     save_context $new_context

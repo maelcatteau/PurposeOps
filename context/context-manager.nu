@@ -19,10 +19,19 @@ export def save_context [context: record] {
 # Load the context
 export def load_context [] {
     if not ($context_path | path exists) {
-        # Create default context file if it doesn't exist
         create_default_context
     }
-    open $context_path
+    
+    let ctx = open $context_path
+    
+    # S'assurer que la clé deployment existe toujours
+    if ($ctx | get -o deployment | is-empty) {
+        let updated_ctx = ($ctx | upsert deployment null)
+        save_context $updated_ctx
+        return $updated_ctx
+    }
+    
+    return $ctx
 }
 # Create the default context
 export def create_default_context [] {
@@ -34,6 +43,9 @@ export def create_default_context [] {
         host: {
             localhost: $localhost_info
         }
+        prompt_show: true
+        customer: {} # Ou null, selon votre préférence de structure
+        deployment: null # Ajout de la clé deployment
     }
 
     # Create directory if it doesn't exist
