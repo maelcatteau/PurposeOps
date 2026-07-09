@@ -26,14 +26,23 @@ export def get-prompt-context [] {
             let host_name = get-current-host | columns | first
             let host_info = get-current-host | get $host_name
             let customer_info = get-current-customer
+
+            # Le déploiement sélectionné (record complet, ou absent/ancien format string)
+            let deployment = ($context | get -o deployment)
+            let deployment_label = if (($deployment | is-not-empty) and (($deployment | describe) | str starts-with "record")) {
+                $" \(($deployment | get -o deployment_id)\)"
+            } else {
+                ""
+            }
+
             if ($customer_info != "No customer currently selected") {
                 let customer_name = $customer_info | columns | first
                 let customer_abbr = $customer_info | get $customer_name | get abbreviation
                 # Different formatting based on host type
                 if ($host_info.hostname == "localhost") {
-                    $"🏠 local - ($customer_abbr)"
+                    $"🏠 local - ($customer_abbr)($deployment_label)"
                 } else {
-                    $"🌐 ($host_info.name) - ($customer_abbr)"
+                    $"🌐 ($host_info.name) - ($customer_abbr)($deployment_label)"
                 }
             } else {
                 if ($host_info.hostname == "localhost") {
