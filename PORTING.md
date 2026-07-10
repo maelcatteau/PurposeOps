@@ -350,11 +350,45 @@ patterns rodés.
 
 ## Phase 7 — Bascule
 
-- [ ] **7.1** `cargo install --path ppo-rs`, renommer le binaire en `ppo`, retirer le
+- [x] **7.1** `cargo install --path ppo-rs`, renommer le binaire en `ppo`, retirer le
       `use ppo.nu` de `~/.config/nushell/config.nu`, définir les alias courts côté shell
       si souhaité (attention : `sh` en externe entre en collision avec le shell Bourne —
       soit garder ces alias confinés dans la config nu, soit renommer `sh` ; à trancher
       à ce moment-là).
+
+      **Fait** : package Cargo renommé `ppor` → `ppo` (`Cargo.toml`, `#[command(name = ...)]`
+      dans `main.rs`, + les quelques messages d'erreur/doc-comments qui citaient
+      littéralement `ppor <cmd>` dans `check.rs`/`deployment.rs`/`main.rs` — pas touché
+      aux mentions historiques de `ppor` dans les logs `Fait` des phases précédentes de
+      ce fichier, qui décrivent fidèlement ce qui a été exécuté à l'époque).
+      `cargo install --path .` → `~/.cargo/bin/ppo` (déjà sur le `PATH`).
+
+      Décision sur la collision `sh`/Bourne shell : **pas d'alias top-level côté shell du
+      tout**. Le nu module namespaçait déjà tout sous `ppo <cmd>` (`use ppo.nu` sans `*`),
+      donc `ppo sh`/`ppo sc`/etc. existaient déjà uniquement comme *sous-commandes* de
+      `ppo`, jamais comme commandes `sh`/`sc` nues dans le PATH ou le scope nu — même
+      chose côté Rust via les `visible_alias` clap (`ppo sh` invoque `set-host`). Aucune
+      collision possible avec `/bin/sh`, aucun renommage nécessaire.
+
+      `~/.config/nushell/config.nu` : suppression de `use ~/dev/nu-modules/PurposeOps/ppo.nu`
+      et `export alias "ppos" = ppo ppos` ; ajout d'une ligne miroir du pattern Starship
+      déjà en place (`starship init nu | save -f (vendor/autoload/starship.nu)`) :
+      `ppo completions nushell | save -f (vendor/autoload/ppo-completions.nu)`,
+      régénérée à chaque lancement de shell donc jamais périmée.
+      `~/.config/starship.toml` : `[custom.ppo_context]` pointe maintenant sur
+      `/home/ngner/.cargo/bin/ppo prompt` (au lieu du chemin `target/release/ppor`).
+
+      Vérifié : `nu -c '<script>'` ne charge PAS `config.nu` par défaut dans cette
+      version de nushell (0.106.0) — contrairement à l'hypothèse initiale, confirmé en
+      ajoutant un marqueur en tête de `config.nu` et en observant qu'il ne s'affichait
+      pas sous `-c` seul. La vraie validation s'est donc faite avec une **session
+      interactive réelle** (`pexpect` spawnant `nu` sans `-c`) : après suppression du
+      fichier de complétions, une session interactive fraîche a bien régénéré
+      `ppo-completions.nu` **et** `starship.nu` au même timestamp (donc `config.nu`
+      s'exécute en entier sans erreur fatale) ; `nu-check` confirme un nu valide
+      (79 `export extern`, zéro référence résiduelle à `ppor`). Prompt Starship
+      vérifié rendu correctement via le nouveau binaire installé. Config PurposeOps
+      (`hosts.yaml`/`customers.yaml`/`context.yaml`) non touchée par cette phase.
 - [ ] **7.2** Après quelques semaines sans retour arrière : archiver le code nu
       (tag git), mettre à jour CLAUDE.md. **À partir d'ici la coexistence est finie** :
       Rust est seul à lire/écrire les YAML → le chiffrement (Phase 8) devient possible.

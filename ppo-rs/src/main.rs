@@ -21,7 +21,7 @@ use std::io;
 use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "ppor", version, about = "PurposeOps — port Rust (voir PORTING.md)")]
+#[command(name = "ppo", version, about = "PurposeOps — gestion de flotte Odoo/Docker (voir PORTING.md pour l'historique du portage)")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -170,7 +170,7 @@ enum BackupCommand {
 
 /// `completions` — génère un script de complétion shell sur stdout (à sourcer).
 /// Remplace `ppos` (palette fzf) : la découverte des commandes passe désormais par
-/// `ppor --help`/`ppor <cmd> --help` (généré par clap, toujours à jour) et par la
+/// `ppo --help`/`ppo <cmd> --help` (généré par clap, toujours à jour) et par la
 /// tab-completion native du shell plutôt que par un picker interactif ad hoc.
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum CompletionShell {

@@ -371,7 +371,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ppor"
+name = "ppo"
 version = "0.1.0"
 dependencies = [
  "anyhow",

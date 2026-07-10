@@ -1,4 +1,4 @@
-//! `ppor check` — validation de cohérence de toute la config (capacité nouvelle,
+//! `ppo check` — validation de cohérence de toute la config (capacité nouvelle,
 //! inexistante côté nu). Utile avant un merge et pour détecter les configs cassées.
 
 use std::collections::{BTreeMap, HashMap};
@@ -91,7 +91,7 @@ pub fn find_problems(
     }
     if let Some(DeploymentField::Legacy(id)) = &ctx.deployment {
         problems.push(format!(
-            "Contexte : déploiement en ancien format string ('{id}') — re-sélectionner avec 'ppor sd'"
+            "Contexte : déploiement en ancien format string ('{id}') — re-sélectionner avec 'ppo sd'"
         ));
     }
 

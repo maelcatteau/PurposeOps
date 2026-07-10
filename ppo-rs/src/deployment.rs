@@ -12,7 +12,7 @@ pub fn get_current_deployment_info() -> Result<Deployment> {
     match config::load_context()?.deployment {
         None => bail!("Aucun déploiement sélectionné dans le contexte."),
         Some(DeploymentField::Legacy(_)) => bail!(
-            "Format de contexte obsolète (ID simple). Re-sélectionnez le déploiement avec 'ppor sd'."
+            "Format de contexte obsolète (ID simple). Re-sélectionnez le déploiement avec 'ppo sd'."
         ),
         Some(DeploymentField::Full(d)) => Ok(*d),
     }
@@ -104,7 +104,7 @@ fn set_deployment_internal(deployment_id: &str) -> Result<()> {
 /// (avec vérif de cohérence d'hôte comme le nu).
 pub fn cmd_sd(deployment_id: Option<String>) -> Result<()> {
     let (customer_name, _) = customer::get_current_customer()?.ok_or_else(|| {
-        anyhow!("Aucun client sélectionné. Utilisez 'ppor sc <client>' d'abord.")
+        anyhow!("Aucun client sélectionné. Utilisez 'ppo sc <client>' d'abord.")
     })?;
     let customers = config::load_customers()?;
     let cust = customers
