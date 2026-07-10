@@ -38,6 +38,9 @@ faithfully (ports stay `String`, unknown fields must not be dropped). The nu pro
   live in the sibling file `src/<mod>/tests.rs` (with `use super::*;` to reach private items). A file
   module `foo.rs` may coexist with a `foo/` directory for its submodules (2018+ edition) — that's how
   `config.rs` + `config/tests.rs` and `prompt.rs` + `prompt/tests.rs` are laid out.
+- **Progress: Phases 1–4 done, not yet committed on branch `rust`** (prompt binary, config layer +
+  read/select commands, SSH ControlMaster, Docker — see `PORTING.md` for what was verified).
+  Phase 5 (CRUD config: `cc`/`ch`/`cs`/`cdep`) is next.
 - Same as the nu side: `cargo test` covers only pure logic (quoting, YAML round-trips, prompt
   formatting). Anything touching a remote host is verified **live** against real infra.
 

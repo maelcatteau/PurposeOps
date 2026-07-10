@@ -183,16 +183,36 @@ réel), lancé manuellement.
       `ppor close` testé sur la connexion courante (mcm).
       *Fait quand* : parité avec les trois commandes nu.
 
-## Phase 4 — Docker `[Toi]`
+## Phase 4 — Docker `[Toi]` — ✅ fait
 
-- [ ] **4.1** Équivalent de `run_docker_command` : dispatch localhost (`Command` direct)
+**Fait** : les bras `match` manquants dans `fn main()` ont été ajoutés (`docker::cmd_start()?`,
+`cmd_stop`, `cmd_restart`, `cmd_dn_extract`, `cmd_dps`, `cmd_dnls`), `cargo build` compile
+proprement. Alias `dn extract` tranché : reste `dnextract` (un mot), cohérent avec les
+autres alias clap (`dstart`/`dstop`/`dps`/`dnls`) plutôt qu'une sous-commande imbriquée
+pour un seul cas isolé.
+
+`cargo test` : 28/28 verts (dont tous les `docker::tests::*`, logique pure de
+`shell_quote`). Vérifications live :
+- `ppor dps` sur mcm (distant, via ControlMaster) : 42 conteneurs, **identiques en nom/
+  image/statut** à `nu -c 'use ppo.nu; ppo dps'` sur le même hôte.
+- `ppor dps <filtre>` et `--ports`, `ppor dnls` : corrects, `dnls` identique côté nu
+  (31 réseaux, même ordre).
+- Dispatch localhost vérifié (`ppor sh localhost` puis `ppor dps`) en plus du dispatch
+  distant.
+- Cycle complet `dstop`/`dstart` sur `odoo-demo2` (conteneur de test localhost, non
+  critique) : piloté via `pexpect` (le menu fuzzy `inquire` a besoin d'un vrai pty,
+  pas testable par simple pipe de stdin) — arrêt confirmé par disparition de `dps`,
+  puis redémarrage confirmé par réapparition (`Up 10 seconds`).
+- Contexte restauré sur `mcm` (hôte sélectionné avant l'intervention) à la fin.
+
+- [x] **4.1** Équivalent de `run_docker_command` : dispatch localhost (`Command` direct)
       vs distant (chaîne construite avec un `shell_quote` **testé unitairement** —
       c'est LE test qui tue la classe de bugs historique du projet).
-      *Fait quand* : `ppor dps` correct en local et sur un VPS ; `cargo test` couvre
+      *Fait* : `ppor dps` correct en local et sur un VPS ; `cargo test` couvre
       espaces, quotes simples, `$`, parenthèses.
-- [ ] **4.2** `dstop`/`dstart`/`drestart` (fuzzy select du conteneur — parser
+- [x] **4.2** `dstop`/`dstart`/`drestart` (fuzzy select du conteneur — parser
       `docker ps --format json` plutôt que le ssv), `dnls`, `dn extract`.
-      *Fait quand* : cycle stop/start vérifié sur un conteneur non critique.
+      *Fait* : cycle stop/start vérifié en live sur un conteneur non critique.
 
 ## Phase 5 — CRUD config `[Mixte]`
 

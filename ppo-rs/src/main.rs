@@ -7,6 +7,7 @@ mod check;
 mod config;
 mod customer;
 mod deployment;
+mod docker;
 mod host;
 mod prompt;
 mod service;
@@ -84,6 +85,29 @@ enum Command {
     /// Liste les connexions SSH maîtres actives.
     #[command(visible_alias = "lsconn")]
     ListConnections,
+
+    /// Démarre un conteneur (sélection fuzzy parmi tous les conteneurs).
+    #[command(visible_alias = "dstart")]
+    DockerStart,
+    /// Arrête un conteneur (sélection fuzzy parmi les conteneurs actifs).
+    #[command(visible_alias = "dstop")]
+    DockerStop,
+    /// Redémarre un conteneur.
+    #[command(visible_alias = "drestart")]
+    DockerRestart,
+    /// Extrait les réseaux Docker d'un conteneur choisi.
+    #[command(visible_alias = "dnextract")]
+    DockerNetworksExtract,
+    /// Statut des conteneurs en cours (filtre regex optionnel).
+    #[command(visible_alias = "dps")]
+    DockerPs {
+        filter: Option<String>,
+        #[arg(short, long)]
+        ports: bool,
+    },
+    /// Liste les réseaux Docker (filtre regex optionnel).
+    #[command(visible_alias = "dnls")]
+    DockerNetworkList { filter: Option<String> },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -112,6 +136,13 @@ fn main() -> anyhow::Result<()> {
         Command::CloseConnection => ssh::close_current_master_connection()?,
         Command::CloseAllConnections => ssh::close_all_master_connections(),
         Command::ListConnections => ssh::list_master_connections(),
+
+        Command::DockerStart => docker::cmd_start()?,
+        Command::DockerStop => docker::cmd_stop()?,
+        Command::DockerRestart => docker::cmd_restart()?,
+        Command::DockerNetworksExtract => docker::cmd_dn_extract()?,
+        Command::DockerPs { filter, ports } => docker::cmd_dps(filter, ports)?,
+        Command::DockerNetworkList { filter } => docker::cmd_dnls(filter)?,
     }
     Ok(())
 }
