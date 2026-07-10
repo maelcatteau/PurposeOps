@@ -23,6 +23,24 @@ shell.
 - No automated tests exist. Verifying a change means running the actual `ppo <command>` against real
   (or a scratch) host/customer config and inspecting output/side effects on the remote host.
 
+## Rust port (`ppo-rs/`)
+
+A progressive Rust rewrite lives in `ppo-rs/` (branch `rust`, full step-by-step plan in
+`PORTING.md`). The binary is named `ppor` during the migration and coexists with the nu module by
+reading/writing the **same** `PurposeOps-config/` YAML files — so both tools must round-trip the YAML
+faithfully (ports stay `String`, unknown fields must not be dropped). The nu prompt hook in
+`~/.config/starship.toml` already points at the release binary (`ppor prompt`).
+
+- **Build / test / run**: from `ppo-rs/`, `cargo build` · `cargo test` · `cargo run -- <cmd>`.
+  Syntax-check equivalent for a single file is `cargo check`.
+- **Tests go in separate files — never inline `#[cfg(test)] mod tests { … }` blocks in a source
+  file.** Each module `src/<mod>.rs` declares `#[cfg(test)] mod tests;` at the bottom, and the tests
+  live in the sibling file `src/<mod>/tests.rs` (with `use super::*;` to reach private items). A file
+  module `foo.rs` may coexist with a `foo/` directory for its submodules (2018+ edition) — that's how
+  `config.rs` + `config/tests.rs` and `prompt.rs` + `prompt/tests.rs` are laid out.
+- Same as the nu side: `cargo test` covers only pure logic (quoting, YAML round-trips, prompt
+  formatting). Anything touching a remote host is verified **live** against real infra.
+
 ## Architecture
 
 ### Module layout convention

@@ -1,12 +1,33 @@
-// ppo-rs — portage Rust de PurposeOps.
-// Plan de portage : ../PORTING.md
+// ppo-rs — portage Rust de PurposeOps. Plan : ../PORTING.md
 //
-// Prochaine étape = Phase 1.1 : définir les structs `Context` / `Host` / `Deployment`
-// avec serde et parser ../PurposeOps-config/context.yaml.
-//
-// Dépendances déjà prêtes (voir Cargo.toml) :
-//   clap (derive) · serde (derive) · serde_yaml_ng · inquire · anyhow
+// Phase 1 : binaire de prompt qui remplace le `nu -c '...'` lancé par Starship.
+// Dépendances : clap (derive) · serde (derive) · serde_yaml_ng · inquire · anyhow
 
-fn main() {
-    println!("ppo-rs — voir PORTING.md, commencer par la Phase 1.1");
+mod config;
+mod prompt;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "ppor", version, about = "PurposeOps — port Rust (voir PORTING.md)")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Affiche la chaîne de contexte pour le prompt Starship.
+    Prompt,
+    /// Bascule l'affichage du prompt (on/off).
+    #[command(visible_alias = "t")]
+    TogglePrompt,
+}
+
+fn main() -> anyhow::Result<()> {
+    match Cli::parse().command {
+        Command::Prompt => println!("{}", prompt::get_prompt_context()),
+        Command::TogglePrompt => prompt::toggle_prompt()?,
+    }
+    Ok(())
 }

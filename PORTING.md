@@ -86,27 +86,25 @@ struct Service { template_dir_path, template_compose_path, variables: Vec<...> }
       `ppo-rs/target/` ajouté au `.gitignore`. `cargo run` OK.
       **Reste à faire par toi** : `git add` + commit initial quand tu veux.
 
-## Phase 1 — Binaire de prompt (gain immédiat) `[Toi]`
+## Phase 1 — Binaire de prompt (gain immédiat) `[Toi → fait par Claude à ta demande]`
 
-*Concepts : structs, derive, `serde`, `Result`/`Option`, pattern matching.*
+*Concepts (à relire dans le code, il est commenté pour ça) : structs, derive, `serde`,
+`Result`/`Option`, pattern matching, `#[serde(untagged)]`.*
 
-- [ ] **1.1** Structs `Context` (+ `Host`, `Deployment`…) avec `serde` ; lire
-      `context.yaml` et l'afficher en `{:#?}`. Gérer `deployment: null` et l'ancien
-      format string (enum `#[serde(untagged)]`).
-      *Fait quand* : le YAML réel parse sans erreur, deployment absent/null/record OK.
-- [ ] **1.2** Porter la logique de `context/prompt/prompt-manager.nu` `get-prompt-context` :
-      `prompt_show` false → chaîne vide ; `🏠 local` vs `🌐 <host.name>` ; suffixe
-      `- <abbr>` si client sélectionné ; ` (<deployment_id>)` si déploiement (record) ;
-      `❓ unknown` sur toute erreur. Écrire des **tests unitaires** sur les 6 cas.
-      *Fait quand* : `cargo test` passe et la sortie est identique à `ppo p` sur ton
-      contexte courant.
-- [ ] **1.3** Brancher `clap` : sous-commande `ppor prompt` (+ `ppor toggle-prompt`
-      alias `t`, qui réécrit `prompt_show` — premier write YAML : vérifier que nu relit
-      bien le fichier).
-      *Fait quand* : `ppor prompt` et `ppor t` fonctionnent, `ppo p` côté nu voit le toggle.
-- [ ] **1.4** `cargo build --release`, pointer `~/.config/starship.toml`
-      `[custom.ppo_context]` sur le binaire release au lieu de `nu -c '...'`.
-      *Fait quand* : le prompt s'affiche sans latence perceptible (~1 ms vs ~100 ms).
+- [x] **1.1** Structs `Context`/`Host`/`Deployment`/`DbCredentials`/`DeploymentField`
+      dans `src/config.rs`, `serde`, load/save. `deployment: null` (Option) et ancien
+      format string (enum `#[serde(untagged)]`) gérés. Tests dans `src/config/tests.rs`.
+      *Fait* : parse le YAML réel + null + legacy + round-trip qui préserve le mot de passe.
+- [x] **1.2** Logique portée dans `src/prompt.rs` (`format_prompt` pur + `get_prompt_context`
+      qui lit le disque). Tests des 7 cas dans `src/prompt/tests.rs`.
+      *Fait* : `cargo test` = 11/11 vert ; sortie **identique** à `ppo p` (`🌐 vps-mcm - moi
+      (odoo-perso)` vérifié en croisé nu↔rust).
+- [x] **1.3** `clap` dans `src/main.rs` : `ppor prompt` + `ppor toggle-prompt` (alias `t`).
+      *Fait* : toggle croisé vérifié (ppor écrit → nu relit, et inversement) ; le fichier
+      écrit par Rust préserve tout (deployment + creds), même quoting `'2222'` que le nu.
+- [x] **1.4** `~/.config/starship.toml` `[custom.ppo_context]` pointe désormais sur
+      `ppo-rs/target/release/ppor prompt` (ancienne commande `nu -c` conservée en commentaire).
+      *Fait* : ~1,2 ms/prompt contre ~58 ms avant (mesuré, ~48×).
 
 ## Phase 2 — Couche config + commandes de lecture/sélection `[Toi]`
 
