@@ -1,12 +1,19 @@
-//! `backup run` (port de `customer-manager/backup.nu`'s `backup run` + `do-generic-backup`).
+//! `backup run` / `backup restore` (port de `customer-manager/backup.nu`'s `backup run`
+//! + `backup restore` + `do-generic-backup` + `do-generic-restore`).
+//!
+//! `backup restore` est destructif (`DROP DATABASE` sur la cible) et peut restaurer une
+//! archive venant d'un tout autre client/déploiement (croisement backup/restore : les
+//! fichiers `.sql`/`_fs.tar.gz` de l'archive portent le nom de la base D'ORIGINE, pas
+//! forcément celui de la cible) — voir `run_restore_steps`.
 //!
 //! Écarts volontaires avec le nu, purement du nettoyage — comportement inchangé :
 //! - `--service` (jamais lu dans le corps de `backup run` côté nu) et `--silent` (jamais
-//!   lu ni dans `backup run` ni dans `do-generic-backup`) sont des paramètres morts côté
-//!   nu ; ils ne sont pas repris ici.
-//! - `--dbHost` est accepté par `do-generic-backup` côté nu mais jamais utilisé dans la
-//!   commande `pg_dump` (qui force `-h localhost`, cohérent puisque `pg_dump` tourne
-//!   *dans* le conteneur DB) : le paramètre correspondant n'est pas non plus repris ici.
+//!   lu ni dans `backup run`/`backup restore` ni dans `do-generic-backup`/
+//!   `do-generic-restore`) sont des paramètres morts côté nu ; ils ne sont pas repris ici.
+//! - `--dbHost` est accepté par `do-generic-backup`/`do-generic-restore` côté nu mais
+//!   jamais utilisé dans les commandes `pg_dump`/`psql` (qui forcent `-h localhost`,
+//!   cohérent puisqu'elles tournent *dans* le conteneur DB) : le paramètre correspondant
+//!   n'est pas non plus repris ici.
 //! - Le bloc `🔍 DEBUG VARIABLES` de `backup run` (dump de variables internes) était du
 //!   débogage laissé en place, pas un comportement voulu : pas porté.
 
@@ -15,7 +22,7 @@ use std::process::{Command, Output};
 use anyhow::{Result, anyhow, bail};
 
 use crate::config::{self, Host};
-use crate::{customer, deployment, docker, ssh};
+use crate::{customer, deployment, docker, ssh, ui};
 
 /// Le nu remplace en dur `~` par le home de l'utilisateur SSH distant (pas celui du
 /// laptop) : un `~/...` entre quotes simples dans une commande shell distante n'est de
@@ -80,6 +87,17 @@ fn exec_remote_shell_checked(cmd: &str, host: &Host, step: &str) -> Result<Outpu
     let result = exec_remote_shell(cmd, host)?;
     check_step(&result, step)?;
     Ok(result)
+}
+
+/// Liste les backups (`*.tar.gz`) disponibles dans un dossier distant, du plus récent
+/// au plus ancien.
+fn list_remote_backups(dir: &str, host: &Host) -> Result<Vec<String>> {
+    let result = exec_remote_shell(&format!("ls -1t '{dir}' 2>/dev/null"), host)?;
+    Ok(String::from_utf8_lossy(&result.stdout)
+        .lines()
+        .filter(|l| l.ends_with(".tar.gz"))
+        .map(str::to_string)
+        .collect())
 }
 
 /// Horodatage local (heure du laptop, comme `date now` côté nu) — un `sh`/`date`
@@ -315,6 +333,332 @@ fn run_backup_steps(
     );
 
     println!("🎉 Succès ! Backup complet disponible sur le serveur : {remote_dest}");
+    Ok(())
+}
+
+/// `backup restore` — restaure une archive dans le déploiement courant. **Destructif**
+/// (`DROP DATABASE` sur la cible) : demande confirmation sauf si `force`.
+pub fn cmd_backup_restore(
+    backup_file: Option<String>,
+    target_database: Option<String>,
+    force: bool,
+) -> Result<()> {
+    let (customer_name, _) =
+        customer::get_current_customer()?.ok_or_else(|| anyhow!("❌ Aucun client sélectionné."))?;
+    let customers = config::load_customers()?;
+    let customer_data = customers
+        .get(&customer_name)
+        .ok_or_else(|| anyhow!("Client '{customer_name}' introuvable"))?;
+
+    let dep = deployment::get_current_deployment_info()?;
+    let host_id = dep
+        .hosts
+        .first()
+        .map(|h| h.host_id.clone())
+        .ok_or_else(|| anyhow!("Déploiement sans hôte."))?;
+
+    let hosts = config::load_hosts()?;
+    let host = hosts
+        .get(&host_id)
+        .ok_or_else(|| anyhow!("Hôte '{host_id}' introuvable dans hosts.yaml"))?;
+
+    let app_container = dep
+        .container_name
+        .clone()
+        .ok_or_else(|| anyhow!("❌ Ce déploiement n'a pas de container_name configuré."))?;
+    let db_container = dep
+        .db_container_name
+        .clone()
+        .ok_or_else(|| anyhow!("❌ Ce déploiement n'a pas de db_container_name configuré."))?;
+
+    println!("📦 Conteneur identifié : {app_container}");
+
+    let creds = dep.db_credentials.as_ref().ok_or_else(|| {
+        anyhow!("❌ Credentials DB manquants. Ajoutez 'db_credentials' dans customers.yaml.")
+    })?;
+
+    let target_database = match target_database.filter(|d| !d.is_empty()) {
+        Some(d) => d,
+        None => dep.database_name.clone().ok_or_else(|| {
+            anyhow!(
+                "❌ Aucune base de données cible. Précisez --target-database ou configurez database_name pour ce déploiement."
+            )
+        })?,
+    };
+
+    let abbrev = customer_data.abbreviation.clone();
+
+    let backup_file = match backup_file.filter(|f| !f.is_empty()) {
+        Some(f) => f,
+        None => {
+            if abbrev.is_empty() {
+                bail!("Abréviation client manquante, impossible de lister les backups.");
+            }
+            let backup_dir = resolve_remote_path(&format!("~/backups/{abbrev}/{host_id}"));
+            println!("🔎 Recherche des backups disponibles ({backup_dir})...");
+            let available = list_remote_backups(&backup_dir, host)?;
+            if available.is_empty() {
+                bail!("❌ Aucun backup trouvé dans {backup_dir}.");
+            }
+            match ui::select("Backup à restaurer :", available) {
+                Some(s) => s,
+                None => {
+                    println!("❌ Restauration annulée.");
+                    return Ok(());
+                }
+            }
+        }
+    };
+
+    // Un backup peut venir d'un tout autre client/déploiement (restauration croisée) :
+    // un chemin absolu est utilisé tel quel, sinon on le cherche dans le dossier de
+    // backup habituel du client courant.
+    let backup_path = if backup_file.starts_with('/') || backup_file.starts_with('~') {
+        resolve_remote_path(&backup_file)
+    } else {
+        if abbrev.is_empty() {
+            bail!("Abréviation client manquante et chemin de backup non-absolu fourni.");
+        }
+        resolve_remote_path(&format!("~/backups/{abbrev}/{host_id}/{backup_file}"))
+    };
+
+    println!("🔄 RESTAURATION ODOO");
+    println!("📋 Client          : {customer_name}");
+    println!("📋 Base cible      : {target_database}");
+    println!("📋 Backup          : {backup_path}");
+
+    if !force {
+        println!(
+            "⚠️ Ceci va DÉTRUIRE le contenu actuel de la base '{target_database}' sur {app_container}."
+        );
+        if !ui::confirm("Continuer ?") {
+            println!("❌ Restauration annulée.");
+            return Ok(());
+        }
+    }
+
+    do_generic_restore(
+        &target_database,
+        &app_container,
+        &db_container,
+        host,
+        &creds.port,
+        &creds.user,
+        &creds.password,
+        &backup_path,
+    )
+}
+
+/// Moteur interne : arrête l'app, extrait l'archive, DROP+CREATE la base cible, restaure
+/// le dump SQL puis le filestore (via `docker cp` pendant que l'app est arrêtée, `docker
+/// exec` étant indisponible sur un conteneur stoppé), redémarre l'app, `chown` final.
+/// Toute erreur déclenche une tentative de redémarrage de l'app + nettoyage best-effort
+/// avant d'être propagée (comme le `try`/`catch` du nu).
+#[allow(clippy::too_many_arguments)]
+fn do_generic_restore(
+    target_database: &str,
+    app_container: &str,
+    db_container: &str,
+    host: &Host,
+    db_port: &str,
+    db_user: &str,
+    db_password: &str,
+    backup_path: &str,
+) -> Result<()> {
+    let tmp = "/tmp";
+    let ts = local_timestamp()?;
+    let work_dir = format!("{tmp}/restore_{ts}");
+
+    let result = run_restore_steps(
+        target_database,
+        app_container,
+        db_container,
+        host,
+        db_port,
+        db_user,
+        db_password,
+        backup_path,
+        tmp,
+        &ts,
+        &work_dir,
+    );
+
+    if let Err(e) = &result {
+        println!("❌ Erreur attrapée : {e}");
+        println!("⚠️ Tentative de redémarrage du conteneur applicatif...");
+        let _ = exec_remote(&["start", app_container], host);
+        let _ = exec_remote_shell(&format!("rm -rf '{work_dir}'"), host);
+    }
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_restore_steps(
+    target_database: &str,
+    app_container: &str,
+    db_container: &str,
+    host: &Host,
+    db_port: &str,
+    db_user: &str,
+    db_password: &str,
+    backup_path: &str,
+    tmp: &str,
+    ts: &str,
+    work_dir: &str,
+) -> Result<()> {
+    println!("🔎 Vérification du fichier de backup sur l'hôte...");
+    exec_remote_shell_checked(&format!("test -f '{backup_path}'"), host, "vérification du fichier de backup")?;
+
+    println!("🛑 Arrêt du conteneur applicatif ({app_container})...");
+    exec_remote_checked(&["stop", app_container], host, "arrêt du conteneur applicatif")?;
+
+    println!("📦 Extraction de l'archive sur l'hôte...");
+    exec_remote_shell_checked(
+        &format!("mkdir -p '{work_dir}' && tar -xzf '{backup_path}' -C '{work_dir}'"),
+        host,
+        "extraction de l'archive",
+    )?;
+
+    let sql_find = exec_remote_shell(&format!("ls {work_dir}/*.sql 2>/dev/null | head -1"), host)?;
+    let sql_file = stdout_str(&sql_find);
+    if sql_file.is_empty() {
+        bail!("Aucun fichier .sql trouvé dans l'archive de backup.");
+    }
+
+    let fs_find = exec_remote_shell(&format!("ls {work_dir}/*_fs.tar.gz 2>/dev/null | head -1"), host)?;
+    let fs_archive = stdout_str(&fs_find);
+
+    println!("🗑️ Suppression de la base '{target_database}' si elle existe...");
+    exec_remote_checked(
+        &[
+            "exec",
+            "-e",
+            &format!("PGPASSWORD={db_password}"),
+            db_container,
+            "psql",
+            "-h",
+            "localhost",
+            "-p",
+            db_port,
+            "-U",
+            db_user,
+            "-d",
+            "postgres",
+            "-c",
+            &format!("DROP DATABASE IF EXISTS \"{target_database}\""),
+        ],
+        host,
+        "suppression de la base existante",
+    )?;
+
+    println!("🆕 Création de la base '{target_database}'...");
+    exec_remote_checked(
+        &[
+            "exec",
+            "-e",
+            &format!("PGPASSWORD={db_password}"),
+            db_container,
+            "psql",
+            "-h",
+            "localhost",
+            "-p",
+            db_port,
+            "-U",
+            db_user,
+            "-d",
+            "postgres",
+            "-c",
+            &format!("CREATE DATABASE \"{target_database}\" OWNER \"{db_user}\" ENCODING 'UTF8'"),
+        ],
+        host,
+        "création de la base cible",
+    )?;
+
+    println!("💾 Copie et restauration du dump SQL...");
+    let restore_sql_tmp = format!("{tmp}/restore_{ts}.sql");
+    exec_remote_checked(
+        &["cp", &sql_file, &format!("{db_container}:{restore_sql_tmp}")],
+        host,
+        "copie du dump vers le conteneur DB",
+    )?;
+    exec_remote_checked(
+        &[
+            "exec",
+            "-e",
+            &format!("PGPASSWORD={db_password}"),
+            db_container,
+            "psql",
+            "-h",
+            "localhost",
+            "-p",
+            db_port,
+            "-U",
+            db_user,
+            "-d",
+            target_database,
+            "-f",
+            &restore_sql_tmp,
+        ],
+        host,
+        "restauration du dump SQL",
+    )?;
+    let _ = exec_remote(&["exec", db_container, "rm", "-f", &restore_sql_tmp], host);
+
+    let has_filestore = !fs_archive.is_empty();
+    if has_filestore {
+        println!("📂 Restauration du filestore...");
+        let fs_extract_dir = format!("{work_dir}/fs_extract");
+        exec_remote_shell_checked(
+            &format!("mkdir -p '{fs_extract_dir}' && tar -xzf '{fs_archive}' -C '{fs_extract_dir}'"),
+            host,
+            "extraction du filestore",
+        )?;
+
+        let src_dir_result = exec_remote_shell(&format!("ls '{fs_extract_dir}'"), host)?;
+        let src_dir_name = stdout_str(&src_dir_result);
+
+        if src_dir_name.is_empty() {
+            println!("⚠️ Archive de filestore vide, rien à restaurer.");
+        } else {
+            // Le suffixe '/.' copie le CONTENU du répertoire source, pas le répertoire
+            // lui-même — l'archive contient un répertoire nommé d'après la base D'ORIGINE.
+            exec_remote_checked(
+                &[
+                    "cp",
+                    &format!("{fs_extract_dir}/{src_dir_name}/."),
+                    &format!("{app_container}:/var/lib/odoo/filestore/{target_database}"),
+                ],
+                host,
+                "copie du filestore vers le conteneur APP",
+            )?;
+        }
+    } else {
+        println!("⚠️ Aucun filestore dans l'archive, restauration SQL uniquement.");
+    }
+
+    println!("🧹 Nettoyage des fichiers temporaires sur l'hôte...");
+    let _ = exec_remote_shell(&format!("rm -rf '{work_dir}'"), host);
+
+    println!("🚀 Redémarrage du conteneur applicatif ({app_container})...");
+    exec_remote_checked(&["start", app_container], host, "redémarrage du conteneur applicatif")?;
+
+    if has_filestore {
+        let _ = exec_remote(
+            &[
+                "exec",
+                "-u",
+                "root",
+                app_container,
+                "chown",
+                "-R",
+                "odoo:odoo",
+                &format!("/var/lib/odoo/filestore/{target_database}"),
+            ],
+            host,
+        );
+    }
+
+    println!("🎉 Succès ! Base '{target_database}' restaurée depuis {backup_path}");
     Ok(())
 }
 

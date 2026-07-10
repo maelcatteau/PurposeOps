@@ -281,10 +281,50 @@ patterns rodés.
       (attendu, ça diffère aussi entre deux backups nu consécutifs). `cargo test` :
       4 nouveaux tests purs (`resolve_remote_path`, `check_step` succès/échec via
       `ExitStatusExt::from_raw`), 37/38 verts (1 `#[ignore]` réseau).
-- [ ] **6.2** `backup restore` : port de `do-generic-restore` (drop/create DB, docker cp
+- [x] **6.2** `backup restore` : port de `do-generic-restore` (drop/create DB, docker cp
       sur conteneur arrêté, chown post-redémarrage, confirmation + `--force`).
       *Fait quand* : restauration réussie **sur un déploiement scratch d'abord**, puis
       validation en conditions réelles.
+      **Fait** : `cmd_backup_restore` + `do_generic_restore`/`run_restore_steps` dans
+      `src/backup.rs`, mêmes étapes que le nu (stop app → extraction de l'archive → DROP
+      + CREATE DATABASE → restauration du dump SQL → restauration filestore via `docker
+      cp` pendant que l'app est arrêtée (`exec` indisponible sur conteneur stoppé) →
+      restart → `chown -R odoo:odoo` → nettoyage), avec le même best-effort de secours
+      (redémarrage app + `rm -rf` du work_dir) sur erreur à n'importe quelle étape. La
+      résolution croisée du chemin de backup (`~/backups/<abbrev>/<host_id>/` du client
+      courant, ou chemin absolu si le backup vient d'un autre client/déploiement) et
+      `list_remote_backups` (sélection fuzzy si aucun fichier passé en argument) sont
+      aussi portés.
+
+      **Scratch d'abord** (déploiement jetable `demo-odoo-restore-test`, créé via `cc`/
+      `cdep` du Phase 5, ciblant les conteneurs locaux `odoo-demo`/`odoo-demo-db`) :
+      confirmation testée en live (refus `n` → annulation propre, aucune commande
+      destructive lancée), puis restauration **croisée** — la même archive
+      `manual_catteaumael_*.tar.gz` du déploiement réel `Mael`/`odoo-perso` (hôte `mcm`)
+      restaurée sur la base locale `demo`, avec `--force`. Vérifié après coup : la base
+      cible contient bien les 366 tables et les données de production (`res_company` =
+      "CATTEAU MAEL THIBAULT ERWAN"), filestore restauré (211 fichiers, `chown`é
+      `odoo:odoo`), conteneur applicatif redémarré et sain (logs sans erreur, HTTP up).
+
+      **Bug réel trouvé et corrigé en cours de route** (pas un bug de `ppor` — le nu
+      original aurait buté sur exactement la même chose) : ce `docker-compose.yml` local
+      force `user: "101:101"` pour le conteneur `odoo-demo`, alors que l'utilisateur
+      `odoo` de l'image a l'UID **100** (GID 101) — donc le `chown -R odoo:odoo` de
+      `do-generic-restore`/`run_restore_steps` (identique au nu) remet bien les fichiers
+      à `100:101`, mais le process qui tourne réellement (UID 101, imposé par le
+      `user:` du compose) n'a alors que lecture/exécution de groupe (`755`) sur ces
+      répertoires — pas d'écriture. Odoo plantait donc en 500 en essayant de générer de
+      nouveaux bundles d'assets JS dans le filestore restauré, ce qui bloquait le
+      JavaScript qui démasque le formulaire de login (`d-none` jamais retiré → page de
+      login visuellement vide). Corrigé manuellement pour ce test (`chown -R 101:101`
+      + purge des `ir_attachment` de bundles cassés) — **spécifique à ce conteneur de
+      démo local**, pas quelque chose à corriger dans `do_generic_restore` : les
+      déploiements réels (mcm, ngner) n'ont pas ce `user:` explicite dans leur compose,
+      donc le process tourne bien en tant que `odoo` (UID 100) et `chown -R odoo:odoo`
+      cible le bon UID chez eux.
+
+      `cargo build --release`, `cargo clippy`, `cargo test` restent verts (37/38, 1
+      `#[ignore]` réseau) après l'ajout.
 - [ ] **6.3** Fermeture de la parité : remplacer la palette `ppos` (fzf) par
       `ppor --help` + complétions shell générées (`clap_complete` sait produire du
       **nushell**). La lecture des services est déjà couverte (2.2) ; le rendu de

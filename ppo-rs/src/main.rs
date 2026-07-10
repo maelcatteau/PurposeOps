@@ -148,6 +148,19 @@ enum BackupCommand {
         #[arg(long = "output-dir")]
         output_dir: Option<String>,
     },
+    /// Restaure une archive dans le déploiement courant. DESTRUCTIF (DROP DATABASE sur
+    /// la cible) : demande confirmation sauf si --force.
+    Restore {
+        /// Nom de fichier (résolu dans le dossier de backup du client courant) ou chemin
+        /// absolu sur l'hôte cible ; si omis, sélection interactive.
+        backup_file: Option<String>,
+        /// Base de destination (défaut : database_name du déploiement courant).
+        #[arg(long = "target-database")]
+        target_database: Option<String>,
+        /// Ne pas demander de confirmation avant d'écraser la base cible.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -193,6 +206,9 @@ fn main() -> anyhow::Result<()> {
 
         Command::Backup(BackupCommand::Run { cron, output_dir }) => {
             backup::cmd_backup_run(output_dir, cron)?
+        }
+        Command::Backup(BackupCommand::Restore { backup_file, target_database, force }) => {
+            backup::cmd_backup_restore(backup_file, target_database, force)?
         }
     }
     Ok(())
