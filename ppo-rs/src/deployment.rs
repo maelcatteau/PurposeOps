@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow, bail};
 
-use crate::config::{self, Customer, Deployment, DeploymentField};
+use crate::config::{self, Customer, DbCredentials, Deployment, DeploymentField, DeploymentHost};
 use crate::{customer, host, ui};
 
 /// Record du déploiement courant. Erreurs explicites : absent, ou ancien format string.
@@ -145,4 +145,115 @@ pub fn cmd_sd(deployment_id: Option<String>) -> Result<()> {
     } else {
         set_deployment_internal(&selected)
     }
+}
+
+/// Un `deployment_id` doit être unique **globalement** (tous clients confondus) —
+/// `host_for_deployment` et les autres lookups cherchent par id sans préciser de client.
+fn deployment_id_exists(deployment_id: &str, customers: &BTreeMap<String, Customer>) -> bool {
+    customers
+        .values()
+        .any(|c| c.deployments.iter().any(|d| d.deployment_id == deployment_id))
+}
+
+/// `cdep` (create_deployment) — pour le client courant : wizard interactif, validation
+/// host + unicité globale de l'id, champs DB optionnels, aperçu YAML, confirmation,
+/// append dans `customers.yaml`. Port de `deployment-manager/core.nu`'s `create_deployment`.
+pub fn cmd_cdep() -> Result<()> {
+    let (customer_name, _) = customer::get_current_customer()?
+        .ok_or_else(|| anyhow!("Aucun client sélectionné. Utilisez 'sc <client>' d'abord."))?;
+
+    let hosts = config::load_hosts()?;
+    println!("📍 Création d'un déploiement pour : {customer_name}");
+
+    let Some(service_name) = ui::text("Service name (ex: Odoo CE, Vaultwarden): ") else {
+        return Ok(());
+    };
+    let Some(host_id) = ui::text("Host ID: ") else {
+        return Ok(());
+    };
+
+    if !hosts.contains_key(&host_id) {
+        let available: Vec<&String> = hosts.keys().collect();
+        println!("❌ Host '{host_id}' introuvable ! Hôtes disponibles : {available:?}");
+        return Ok(());
+    }
+
+    let Some(path_for_service) = ui::text("Path for service on host: ") else {
+        return Ok(());
+    };
+    let Some(path_for_docker_compose) = ui::text("Path for docker-compose file: ") else {
+        return Ok(());
+    };
+    let Some(deployment_id) = ui::text("Deployment id (unique): ") else {
+        return Ok(());
+    };
+
+    let mut customers = config::load_customers()?;
+    if deployment_id_exists(&deployment_id, &customers) {
+        println!("❌ Le deployment_id '{deployment_id}' est déjà utilisé par un autre déploiement.");
+        return Ok(());
+    }
+
+    let mut new_deployment = Deployment {
+        service_name,
+        hosts: vec![DeploymentHost {
+            host_id,
+            path_for_service,
+            path_for_docker_compose,
+        }],
+        deployment_id: deployment_id.clone(),
+        container_name: None,
+        db_container_name: None,
+        database_name: None,
+        db_credentials: None,
+    };
+
+    if ui::confirm("Ce déploiement a-t-il une base de données à sauvegarder ?") {
+        let Some(container_name) = ui::text("Container name: ") else {
+            return Ok(());
+        };
+        let Some(db_container_name) = ui::text("DB container name: ") else {
+            return Ok(());
+        };
+        let Some(database_name) = ui::text("Database name: ") else {
+            return Ok(());
+        };
+        let Some(db_host) = ui::text("DB credentials - host: ") else {
+            return Ok(());
+        };
+        let Some(db_port) = ui::text("DB credentials - port: ") else {
+            return Ok(());
+        };
+        let Some(db_user) = ui::text("DB credentials - user: ") else {
+            return Ok(());
+        };
+        let Some(db_password) = ui::text("DB credentials - password: ") else {
+            return Ok(());
+        };
+
+        new_deployment.container_name = Some(container_name);
+        new_deployment.db_container_name = Some(db_container_name);
+        new_deployment.database_name = Some(database_name);
+        new_deployment.db_credentials = Some(DbCredentials {
+            host: db_host,
+            port: db_port,
+            user: db_user,
+            password: db_password,
+        });
+    }
+
+    println!("{}", serde_yaml_ng::to_string(&new_deployment)?);
+    if !ui::confirm("Créer ce déploiement ?") {
+        println!("❌ Opération annulée");
+        return Ok(());
+    }
+
+    let cust = customers
+        .get_mut(&customer_name)
+        .ok_or_else(|| anyhow!("Client '{customer_name}' introuvable"))?;
+    cust.deployments.push(new_deployment);
+    config::save_yaml_map(&config::customers_config_path(), &customers)?;
+
+    println!("✅ Déploiement '{deployment_id}' créé pour '{customer_name}'");
+    Ok(())
 }

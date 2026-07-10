@@ -45,6 +45,12 @@ enum Command {
     /// Sélectionne l'hôte courant (arg direct ou menu fuzzy).
     #[command(visible_alias = "sh")]
     SetHost { host_id: Option<String> },
+    /// Crée un nouvel hôte (wizard interactif).
+    #[command(visible_alias = "ch")]
+    CreateHost,
+    /// Supprime un hôte (sélection fuzzy + confirmation).
+    #[command(visible_alias = "dh")]
+    DeleteHost,
 
     /// Client courant (nom + abréviation).
     #[command(visible_alias = "c")]
@@ -58,6 +64,12 @@ enum Command {
     /// Sélectionne le client courant (arg direct ou menu fuzzy).
     #[command(visible_alias = "sc")]
     SetCustomer { customer: Option<String> },
+    /// Crée un nouveau client (wizard interactif).
+    #[command(visible_alias = "cc")]
+    CreateCustomer,
+    /// Supprime un client (sélection fuzzy + confirmation).
+    #[command(visible_alias = "dc")]
+    DeleteCustomer,
 
     /// Id du déploiement courant.
     #[command(visible_alias = "pde")]
@@ -71,10 +83,19 @@ enum Command {
     /// Sélectionne le déploiement courant (arg direct ou menu fuzzy).
     #[command(visible_alias = "sd")]
     SetDeployment { deployment_id: Option<String> },
+    /// Crée un déploiement pour le client courant (wizard interactif).
+    #[command(visible_alias = "cdep")]
+    CreateDeployment,
 
     /// Liste tous les services disponibles.
     #[command(visible_alias = "lss")]
     ListServices,
+    /// Crée un nouveau service (wizard interactif).
+    #[command(visible_alias = "cs")]
+    CreateService,
+    /// Supprime un service (sélection fuzzy + confirmation).
+    #[command(visible_alias = "ds")]
+    DeleteService,
 
     /// Ferme la connexion SSH maître de l'hôte courant.
     #[command(visible_alias = "close")]
@@ -120,18 +141,25 @@ fn main() -> anyhow::Result<()> {
         Command::HostName => host::cmd_hname()?,
         Command::ListHosts => host::cmd_lsh()?,
         Command::SetHost { host_id } => host::cmd_sh(host_id)?,
+        Command::CreateHost => host::cmd_ch()?,
+        Command::DeleteHost => host::cmd_dh()?,
 
         Command::GetCurrentCustomer => customer::cmd_c()?,
         Command::CustomerName => customer::cmd_cname()?,
         Command::ListCustomers => customer::cmd_lsc()?,
         Command::SetCustomer { customer } => customer::cmd_sc(customer)?,
+        Command::CreateCustomer => customer::cmd_cc()?,
+        Command::DeleteCustomer => customer::cmd_dc()?,
 
         Command::GetCurrentDeployment => deployment::cmd_pde()?,
         Command::GetCurrentDeploymentInfo => deployment::cmd_pdei()?,
         Command::ListDeployments => deployment::cmd_lsd()?,
         Command::SetDeployment { deployment_id } => deployment::cmd_sd(deployment_id)?,
+        Command::CreateDeployment => deployment::cmd_cdep()?,
 
         Command::ListServices => service::cmd_lss()?,
+        Command::CreateService => service::cmd_cs()?,
+        Command::DeleteService => service::cmd_ds()?,
 
         Command::CloseConnection => ssh::close_current_master_connection()?,
         Command::CloseAllConnections => ssh::close_all_master_connections(),

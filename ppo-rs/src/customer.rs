@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow};
 
-use crate::config::{self, Customer, CustomerLite};
+use crate::config::{self, Customer, CustomerHost, CustomerLite};
 use crate::{host, ui};
 
 /// (name, CustomerLite) courant, ou `None`.
@@ -106,4 +106,58 @@ pub fn cmd_sc(customer: Option<String>) -> Result<()> {
         // Client sans hôte défini : on applique quand même.
         set_customer_internal(&name, cust)
     }
+}
+
+/// `cc` (create_customer) — wizard interactif, aperçu YAML, confirmation, insertion
+/// dans customers.yaml. Port de `customers-config-manager.nu`'s `create_customer`.
+pub fn cmd_cc() -> Result<()> {
+    let hosts = config::load_hosts()?;
+
+    let Some(customer_name) = ui::text("Customer name: ") else {
+        return Ok(());
+    };
+
+    let mut customers = config::load_customers()?;
+    if customers.contains_key(&customer_name) {
+        println!("❌ Customer '{customer_name}' already exists");
+        return Ok(());
+    }
+
+    let Some(abbreviation) = ui::text("Abbreviation: ") else {
+        return Ok(());
+    };
+    let Some(host_id) = ui::text("Host ID: ") else {
+        return Ok(());
+    };
+
+    if !hosts.contains_key(&host_id) {
+        println!("❌ Host '{host_id}' not found!");
+        return Ok(());
+    }
+
+    let Some(path_on_host) = ui::text("Path on host: ") else {
+        return Ok(());
+    };
+
+    let new_customer = Customer {
+        abbreviation,
+        deployments: vec![],
+        hosts: vec![CustomerHost {
+            host_id,
+            path_on_host,
+        }],
+    };
+
+    println!("{}", serde_yaml_ng::to_string(&new_customer)?);
+    if !ui::confirm("Create?") {
+        return Ok(());
+    }
+
+    customers.insert(customer_name, new_customer);
+    config::save_yaml_map(&config::customers_config_path(), &customers)
+}
+
+/// `dc` (delete customer) — sélection fuzzy + confirmation + suppression.
+pub fn cmd_dc() -> Result<()> {
+    config::delete_from_map::<Customer>(config::customers_config_path(), "customer")
 }

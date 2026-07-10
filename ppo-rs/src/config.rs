@@ -179,5 +179,50 @@ pub fn load_services() -> Result<BTreeMap<String, Service>> {
     load_yaml_map(services_config_path())
 }
 
+/// Réécrit un YAML de la forme `clé: record` en entier (comme `open | insert | save -f`
+/// côté nu : pas de patch partiel, tout le fichier est resérialisé).
+pub fn save_yaml_map<T: Serialize>(path: &PathBuf, map: &BTreeMap<String, T>) -> Result<()> {
+    let text = serde_yaml_ng::to_string(map)?;
+    std::fs::write(path, text).with_context(|| format!("écriture de {}", path.display()))?;
+    Ok(())
+}
+
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Port générique de `config-helper.nu`'s `delete` : sélection fuzzy dans la map,
+/// aperçu YAML de l'entrée, confirmation, suppression + réécriture du fichier entier.
+pub fn delete_from_map<T: Serialize + DeserializeOwned>(path: PathBuf, item_type: &str) -> Result<()> {
+    let mut map: BTreeMap<String, T> = load_yaml_map(path.clone())?;
+    if map.is_empty() {
+        println!("❌ No {item_type} available in configuration");
+        return Ok(());
+    }
+
+    let keys: Vec<String> = map.keys().cloned().collect();
+    let Some(selected) = crate::ui::select(&format!("Select {item_type} :"), keys) else {
+        return Ok(());
+    };
+
+    let item = &map[&selected];
+    println!("Do you want to delete this {item_type}:");
+    println!("Name: {selected}");
+    println!("Configuration: {}", serde_yaml_ng::to_string(item)?);
+
+    if crate::ui::confirm("Delete?") {
+        map.remove(&selected);
+        save_yaml_map(&path, &map)?;
+        println!("✅ {} '{selected}' deleted successfully", capitalize(item_type));
+    } else {
+        println!("❌ Operation cancelled");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

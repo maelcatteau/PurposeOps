@@ -81,3 +81,65 @@ pub fn cmd_sh(host_id: Option<String>) -> Result<()> {
     };
     set_host(&id)
 }
+
+/// `ch` (create_host) — wizard interactif, aperçu YAML, confirmation, insertion dans
+/// hosts.yaml. Port de `hosts-config-manager.nu`'s `create_host`.
+pub fn cmd_ch() -> Result<()> {
+    let Some(host_name) = ui::text("Enter the new host_name : ") else {
+        return Ok(());
+    };
+
+    let mut hosts = config::load_hosts()?;
+    if hosts.contains_key(&host_name) {
+        println!("❌ Host '{host_name}' already exists");
+        return Ok(());
+    }
+
+    let Some(hostname) = ui::text("Enter the new hostname (ip) : ") else {
+        return Ok(());
+    };
+    let Some(user) = ui::text("Enter the user for the new host : ") else {
+        return Ok(());
+    };
+    let Some(port) = ui::text("Enter the port for the new host : ") else {
+        return Ok(());
+    };
+    if port.trim().parse::<u32>().is_err() {
+        println!("❌ Port must be a valid number");
+        return Ok(());
+    }
+    let Some(identity_file) = ui::text("Enter the path for the ssh id file for the new host : ")
+    else {
+        return Ok(());
+    };
+    let Some(arch) = ui::text("Enter the correct architecture ('x86_64', 'arm64') : ") else {
+        return Ok(());
+    };
+
+    let new_host = Host {
+        name: format!("vps-{host_name}"),
+        hostname,
+        user,
+        port,
+        identity_file,
+        arch,
+        docker_context: format!("remote-{host_name}"),
+    };
+
+    println!(
+        "Voulez vous valider ce nouvel hote ? {}",
+        serde_yaml_ng::to_string(&new_host)?
+    );
+    if !ui::confirm("Valider ?") {
+        println!("Opération annulée");
+        return Ok(());
+    }
+
+    hosts.insert(host_name, new_host);
+    config::save_yaml_map(&config::hosts_config_path(), &hosts)
+}
+
+/// `dh` (delete host) — sélection fuzzy + confirmation + suppression.
+pub fn cmd_dh() -> Result<()> {
+    config::delete_from_map::<Host>(config::hosts_config_path(), "host")
+}

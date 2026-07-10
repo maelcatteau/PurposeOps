@@ -5,8 +5,9 @@ module par module, **sans big-bang** : les deux outils coexistent en lisant/écr
 mêmes YAML de `PurposeOps-config/`. Chaque étape est atomique = un commit, un critère
 « fait quand » vérifiable.
 
-**Répartition** : `[Toi]` = étape formatrice que tu codes (avec Claude en support),
-`[Claude]` = mécanique ou risqué, implémenté par Claude et relu par toi.
+**Répartition** : à partir de la Phase 5, toutes les étapes sont `[Claude]` — implémentées
+par Claude et relues par toi (les tags `[Toi]`/`[Mixte]` restants dans les phases 1–4
+ci-dessous sont conservés tels quels, c'est l'historique réel de ce qui a été codé).
 
 ## Vision long terme (cible)
 
@@ -214,15 +215,40 @@ pour un seul cas isolé.
       `docker ps --format json` plutôt que le ssv), `dnls`, `dn extract`.
       *Fait* : cycle stop/start vérifié en live sur un conteneur non critique.
 
-## Phase 5 — CRUD config `[Mixte]`
+## Phase 5 — CRUD config `[Claude]` — ✅ fait
 
-- [ ] **5.1** `[Toi]` `cc` (create_customer) : wizard `inquire`, préversion YAML,
+**Fait** : `save_yaml_map`/`delete_from_map` génériques ajoutés à `config.rs` (port de
+`config-helper.nu`'s `delete`), `ui::text` ajouté pour les prompts libres. `cc`/`ch`/`cs`
++ `dc`/`dh`/`ds` (host.rs/customer.rs/service.rs) et `cdep` (deployment.rs) implémentés
+et câblés dans `main.rs`. Écart volontaire vs le nu : `insert` sur une clé déjà
+existante est refusé explicitement (`❌ ... already exists`) plutôt que de planter comme
+le ferait `record | insert` côté nu — un garde-fou anti-écrasement accidentel, pas un
+changement de comportement fonctionnel.
+
+Vérifié en live (via `pexpect`, `inquire` a besoin d'un vrai pty) sur des entrées
+jetables, avec relecture croisée côté nu à chaque étape, puis restauration exacte des
+YAML (`customers.yaml`/`hosts.yaml`/`services.yaml` octet-identiques à l'état de départ,
+`context.yaml` restauré via `sc`/`sd`) :
+- `ch` + `dh` : hôte `scratchtest` créé (port `'2299'` bien quoté), vu par `ppo lsh`
+  côté nu, puis supprimé.
+- `cc` + `dc` : client `ScratchCustomer` créé, vu par `ppo lsc` côté nu, puis supprimé
+  (avec ses déploiements).
+- `cs` + `ds` : service `ScratchService` créé, vu par `ppo lss` côté nu, puis supprimé.
+- `cdep` : déploiement sans DB (`scratchdep-01`) et avec DB (`scratchdep-db-01`, tous les
+  champs `container_name`/`db_container_name`/`database_name`/`db_credentials` avec
+  `port: '5432'` bien quoté) créés pour `ScratchCustomer`, relus via `ppo pdei` côté nu ;
+  rejet confirmé d'un `deployment_id` dupliqué (`scratchdep-01` réutilisé → erreur, pas
+  de doublon écrit).
+- `ppor check` reste vert (5 clients, 5 déploiements) tout du long.
+
+- [x] **5.1** `[Claude]` `cc` (create_customer) : wizard `inquire`, préversion YAML,
       confirmation, insertion dans `customers.yaml` via le modèle typé complet
       (lecture → modification → réécriture du fichier entier, comme aujourd'hui).
       *Fait quand* : client créé par `ppor cc` visible dans `ppo lsc` côté nu.
-- [ ] **5.2** `[Claude]` `ch`, `cs`, `dh`, `dc` — répétition mécanique du pattern 5.1.
+- [x] **5.2** `[Claude]` `ch`, `cs`, `dh`, `dc` — répétition mécanique du pattern 5.1
+      (`ds` ajouté aussi pour la parité complète avec les alias `mod.nu`).
       *Fait quand* : parité, testée sur des entrées jetables.
-- [ ] **5.3** `[Claude]` `cdep` (create_deployment) : validation host existant + unicité
+- [x] **5.3** `[Claude]` `cdep` (create_deployment) : validation host existant + unicité
       **globale** du `deployment_id`, champs DB optionnels selon le type de service.
       *Fait quand* : refus d'un id dupliqué + création complète d'un déploiement scratch.
 
@@ -260,7 +286,7 @@ patterns rodés.
 
 # Nouvelles features (Phases 8–12) — indépendantes, ordre au choix
 
-## Phase 8 — Chiffrement des credentials au repos `[Mixte]`
+## Phase 8 — Chiffrement des credentials au repos `[Claude]`
 
 *Débloqué par la bascule (le nu ne lit plus les mots de passe en clair).* Approche :
 chiffrer **uniquement les valeurs** `db_credentials.password` (et tout secret) dans les
@@ -268,7 +294,7 @@ YAML ; clé **hors repo**. Architecture clé : chiffrer/déchiffrer **à la fron
 couche config** (Phase 2) — backup et provisioning ne voient que du clair en mémoire et
 ne touchent jamais à la crypto.
 
-- [ ] **8.1** `[Toi]` Mécanisme de clé + crate `age` : clé dans `~/.config/ppo/key`
+- [ ] **8.1** `[Claude]` Mécanisme de clé + crate `age` : clé dans `~/.config/ppo/key`
       (chmod 600) ou trousseau système. `encrypt_secret`/`decrypt_secret` testées
       unitairement.
       *Fait quand* : `cargo test` prouve chiffrer→déchiffrer = identité.
@@ -278,11 +304,11 @@ ne touchent jamais à la crypto.
       *Fait quand* : plus aucun mot de passe en clair dans les YAML, tout marche encore,
       et retirer la clé fait tout échouer (preuve que ça protège réellement).
 
-## Phase 9 — Provisioning end-to-end `[Mixte]`
+## Phase 9 — Provisioning end-to-end `[Claude]`
 
 Déployer un nouveau service en une commande. Réutilise SSH (3), Docker (4), CRUD (5).
 
-- [ ] **9.1** `[Toi]` Port du `templater` : rendu d'un template (`templates/<Service>/`)
+- [ ] **9.1** `[Claude]` Port du `templater` : rendu d'un template (`templates/<Service>/`)
       avec substitution de variables → `compose.yaml` local.
       *Fait quand* : compose rendu identique à celui du templater nu (Vaultwarden).
 - [ ] **9.2** `[Claude]` `ppor provision` : rendu → création du dossier distant (SSH) →
@@ -290,7 +316,7 @@ Déployer un nouveau service en une commande. Réutilise SSH (3), Docker (4), CR
       `customers.yaml` (CRUD 5.3). Confirmation avant `up`.
       *Fait quand* : un service scratch déployé de bout en bout sur un VPS de test.
 
-## Phase 10 — Vue de flotte / health `[Toi]`
+## Phase 10 — Vue de flotte / health `[Claude]`
 
 Nouvelle capacité : l'état de tous les hôtes d'un coup.
 
@@ -312,7 +338,7 @@ Réutilise le backup (6) + secrets (8).
       timer système (cron/systemd), + rapport succès/échec.
       *Fait quand* : un job nocturne backup toute la flotte et notifie en cas d'échec.
 
-## Phase 12 — TUI `[Toi, gros morceau]`
+## Phase 12 — TUI `[Claude, gros morceau]`
 
 Surcouche `ratatui` sur le socle CLI (le CLI reste la référence scriptable).
 
