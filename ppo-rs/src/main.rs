@@ -3,6 +3,7 @@
 // Phases 1–3 : prompt + couche config + lecture/sélection + SSH ControlMaster.
 // Dépendances : clap (derive) · serde (derive) · serde_yaml_ng · inquire · anyhow
 
+mod backup;
 mod check;
 mod config;
 mod customer;
@@ -130,6 +131,23 @@ enum Command {
     /// Liste les réseaux Docker (filtre regex optionnel).
     #[command(visible_alias = "dnls")]
     DockerNetworkList { filter: Option<String> },
+
+    /// Sauvegarde / restauration (port de `customer-manager/backup.nu`).
+    #[command(subcommand)]
+    Backup(BackupCommand),
+}
+
+#[derive(Subcommand)]
+enum BackupCommand {
+    /// Sauvegarde le déploiement courant (dump SQL + filestore) vers l'hôte cible.
+    Run {
+        /// Préfixe `cron_` au lieu de `manual_` dans le nom de l'archive.
+        #[arg(long)]
+        cron: bool,
+        /// Dossier de sortie sur l'hôte cible (défaut : ~/backups/<abréviation>/<host_id>).
+        #[arg(long = "output-dir")]
+        output_dir: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -172,6 +190,10 @@ fn main() -> anyhow::Result<()> {
         Command::DockerNetworksExtract => docker::cmd_dn_extract()?,
         Command::DockerPs { filter, ports } => docker::cmd_dps(filter, ports)?,
         Command::DockerNetworkList { filter } => docker::cmd_dnls(filter)?,
+
+        Command::Backup(BackupCommand::Run { cron, output_dir }) => {
+            backup::cmd_backup_run(output_dir, cron)?
+        }
     }
     Ok(())
 }

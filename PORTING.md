@@ -257,9 +257,30 @@ YAML (`customers.yaml`/`hosts.yaml`/`services.yaml` octet-identiques à l'état 
 Le plus gros (455 l.) et le plus dangereux (`DROP DATABASE`). En dernier, une fois les
 patterns rodés.
 
-- [ ] **6.1** `backup run` : pg_dump via `docker exec -e PGPASSWORD`, tar du filestore,
+- [x] **6.1** `backup run` : pg_dump via `docker exec -e PGPASSWORD`, tar du filestore,
       rapatriement. *Fait quand* : archive produite par `ppor` comparée octet à octet
       (contenu) à une archive produite par le nu sur le même déploiement.
+      **Fait** : `src/backup.rs`, port de `do-generic-backup` (steps identiques : mkdir
+      distant, `pg_dump` dans le conteneur DB, va-et-vient du `.sql` DB→hôte→APP,
+      détection + tar du filestore (ou archive vide s'il est absent), archive globale,
+      `docker cp` final vers l'hôte, nettoyage `-u root`), avec nettoyage best-effort en
+      cas d'erreur à n'importe quelle étape (équivalent du `try`/`catch` nu). 3 écarts
+      volontaires **sans changement de comportement**, documentés en tête de fichier :
+      `--service` et `--silent` (jamais lus dans le corps nu, paramètres morts) et
+      `--dbHost` côté `do-generic-backup` (jamais utilisé — `pg_dump` force `-h
+      localhost`, cohérent puisqu'il tourne *dans* le conteneur DB) ne sont pas repris ;
+      le bloc `🔍 DEBUG VARIABLES` de `backup run` (dump de debug laissé en place côté
+      nu) n'est pas porté non plus.
+
+      Vérifié en live sur le déploiement réel `Mael`/`odoo-perso` (hôte `mcm`, non
+      destructif — dump + copies uniquement) : `ppor backup run` puis `ppo backup run`
+      côté nu, à ~10s d'intervalle, comparaison des deux archives rapatriées sur le
+      laptop — filestore `_fs.tar.gz` **identique octet à octet** (même MD5,
+      2 823 838 octets), dump `.sql` identique sur les 106 981 lignes sauf les tokens
+      aléatoires `\restrict`/`\unrestrict` que `pg_dump` régénère à chaque invocation
+      (attendu, ça diffère aussi entre deux backups nu consécutifs). `cargo test` :
+      4 nouveaux tests purs (`resolve_remote_path`, `check_step` succès/échec via
+      `ExitStatusExt::from_raw`), 37/38 verts (1 `#[ignore]` réseau).
 - [ ] **6.2** `backup restore` : port de `do-generic-restore` (drop/create DB, docker cp
       sur conteneur arrêté, chown post-redémarrage, confirmation + `--force`).
       *Fait quand* : restauration réussie **sur un déploiement scratch d'abord**, puis
