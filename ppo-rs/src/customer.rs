@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, anyhow};
 
 use crate::config::{self, Customer, CustomerHost, CustomerLite};
-use crate::{host, ui};
+use crate::{host, table, ui};
 
 /// (name, CustomerLite) courant, ou `None`.
 pub fn get_current_customer() -> Result<Option<(String, CustomerLite)>> {
@@ -34,18 +34,23 @@ pub fn cmd_cname() -> Result<()> {
 pub fn cmd_lsc() -> Result<()> {
     let customers = config::load_customers()?;
     let current = get_current_customer()?.map(|(n, _)| n);
-    for (name, c) in &customers {
-        let marker = if current.as_deref() == Some(name.as_str()) {
-            " *"
-        } else {
-            ""
-        };
-        println!(
-            "{name}\t{}\t{} deployment(s){marker}",
-            c.abbreviation,
-            c.deployments.len()
-        );
-    }
+    let rows: Vec<Vec<String>> = customers
+        .iter()
+        .map(|(name, c)| {
+            let marker = if current.as_deref() == Some(name.as_str()) {
+                "*"
+            } else {
+                ""
+            };
+            vec![
+                name.clone(),
+                c.abbreviation.clone(),
+                c.deployments.len().to_string(),
+                marker.to_string(),
+            ]
+        })
+        .collect();
+    table::print(&["CUSTOMER", "ABBREVIATION", "DEPLOYMENTS", "CURRENT"], &rows);
     Ok(())
 }
 

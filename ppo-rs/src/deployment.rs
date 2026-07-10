@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, anyhow, bail};
 
 use crate::config::{self, Customer, DbCredentials, Deployment, DeploymentField, DeploymentHost};
-use crate::{customer, host, ui};
+use crate::{customer, host, table, ui};
 
 /// Record du déploiement courant. Erreurs explicites : absent, ou ancien format string.
 pub fn get_current_deployment_info() -> Result<Deployment> {
@@ -48,10 +48,14 @@ pub fn cmd_lsd() -> Result<()> {
         println!("(aucun déploiement pour ce client)");
         return Ok(());
     }
-    for d in &deps {
-        let host = d.hosts.first().map(|h| h.host_id.as_str()).unwrap_or("?");
-        println!("{}\t{}\t{host}", d.deployment_id, d.service_name);
-    }
+    let rows: Vec<Vec<String>> = deps
+        .iter()
+        .map(|d| {
+            let host = d.hosts.first().map(|h| h.host_id.as_str()).unwrap_or("?");
+            vec![d.deployment_id.clone(), d.service_name.clone(), host.to_string()]
+        })
+        .collect();
+    table::print(&["DEPLOYMENT_ID", "SERVICE", "HOST"], &rows);
     Ok(())
 }
 

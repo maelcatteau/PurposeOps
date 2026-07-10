@@ -12,7 +12,7 @@ use regex::Regex;
 use serde::Deserialize;
 
 use crate::config::Host;
-use crate::{host, ssh, ui};
+use crate::{host, ssh, table, ui};
 
 /// Quote un argument pour un shell POSIX distant (même logique que `shell-quote` en nu :
 /// chaque argument devient un mot unique même s'il contient des espaces).
@@ -202,15 +202,26 @@ pub fn cmd_dn_extract() -> Result<()> {
 pub fn cmd_dps(filter: Option<String>, ports: bool) -> Result<()> {
     let host = current_host()?;
     let entries = get_containers(false, &host)?;
+    let mut rows = Vec::new();
     for e in &entries {
         if !regex_contains(&filter, &e.names)? {
             continue;
         }
         if ports {
-            println!("{}\t{}\t{}\t{}", e.names, e.image, e.status, e.ports);
+            rows.push(vec![
+                e.names.clone(),
+                e.image.clone(),
+                e.status.clone(),
+                e.ports.clone(),
+            ]);
         } else {
-            println!("{}\t{}\t{}", e.names, e.image, e.status);
+            rows.push(vec![e.names.clone(), e.image.clone(), e.status.clone()]);
         }
+    }
+    if ports {
+        table::print(&["NAMES", "IMAGE", "STATUS", "PORTS"], &rows);
+    } else {
+        table::print(&["NAMES", "IMAGE", "STATUS"], &rows);
     }
     Ok(())
 }
@@ -218,11 +229,13 @@ pub fn cmd_dps(filter: Option<String>, ports: bool) -> Result<()> {
 /// `dnls` — liste des réseaux Docker (optionnellement filtrée par regex sur le nom).
 pub fn cmd_dnls(filter: Option<String>) -> Result<()> {
     let host = current_host()?;
+    let mut rows = Vec::new();
     for n in get_networks(&host)? {
         if regex_contains(&filter, &n.name)? {
-            println!("{}\t{}\t{}", n.name, n.driver, n.scope);
+            rows.push(vec![n.name.clone(), n.driver.clone(), n.scope.clone()]);
         }
     }
+    table::print(&["NAME", "DRIVER", "SCOPE"], &rows);
     Ok(())
 }
 

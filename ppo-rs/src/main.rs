@@ -12,6 +12,7 @@ mod host;
 mod prompt;
 mod service;
 mod ssh;
+mod table;
 mod ui;
 
 use clap::{Parser, Subcommand};

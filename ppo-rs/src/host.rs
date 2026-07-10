@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, bail};
 
 use crate::config::{self, Host};
-use crate::ui;
+use crate::{table, ui};
 
 /// (host_id, Host) courant, ou `None` si aucun hôte sélectionné.
 pub fn get_current_host() -> Result<Option<(String, Host)>> {
@@ -37,19 +37,23 @@ pub fn cmd_h() -> Result<()> {
 pub fn cmd_lsh() -> Result<()> {
     let hosts = config::load_hosts()?;
     let current = get_current_host()?.map(|(id, _)| id);
-    for (id, host) in &hosts {
-        let kind = if host.hostname == "localhost" {
-            "local"
-        } else {
-            "remote"
-        };
-        let marker = if current.as_deref() == Some(id.as_str()) {
-            " *"
-        } else {
-            ""
-        };
-        println!("{id}\t{}\t{kind}{marker}", host.name);
-    }
+    let rows: Vec<Vec<String>> = hosts
+        .iter()
+        .map(|(id, host)| {
+            let kind = if host.hostname == "localhost" {
+                "local"
+            } else {
+                "remote"
+            };
+            let marker = if current.as_deref() == Some(id.as_str()) {
+                "*"
+            } else {
+                ""
+            };
+            vec![id.clone(), host.name.clone(), kind.to_string(), marker.to_string()]
+        })
+        .collect();
+    table::print(&["HOST", "NAME", "TYPE", "CURRENT"], &rows);
     Ok(())
 }
 
