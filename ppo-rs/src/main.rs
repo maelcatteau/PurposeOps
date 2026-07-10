@@ -16,7 +16,9 @@ mod ssh;
 mod table;
 mod ui;
 
-use clap::{Parser, Subcommand};
+use std::io;
+
+use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "ppor", version, about = "PurposeOps — port Rust (voir PORTING.md)")]
@@ -135,6 +137,9 @@ enum Command {
     /// Sauvegarde / restauration (port de `customer-manager/backup.nu`).
     #[command(subcommand)]
     Backup(BackupCommand),
+
+    /// Génère un script de complétion shell (à sourcer) — remplace la palette `ppos`.
+    Completions { shell: CompletionShell },
 }
 
 #[derive(Subcommand)]
@@ -161,6 +166,21 @@ enum BackupCommand {
         #[arg(long)]
         force: bool,
     },
+}
+
+/// `completions` — génère un script de complétion shell sur stdout (à sourcer).
+/// Remplace `ppos` (palette fzf) : la découverte des commandes passe désormais par
+/// `ppor --help`/`ppor <cmd> --help` (généré par clap, toujours à jour) et par la
+/// tab-completion native du shell plutôt que par un picker interactif ad hoc.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    #[value(name = "powershell")]
+    PowerShell,
+    Zsh,
+    Nushell,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -210,6 +230,26 @@ fn main() -> anyhow::Result<()> {
         Command::Backup(BackupCommand::Restore { backup_file, target_database, force }) => {
             backup::cmd_backup_restore(backup_file, target_database, force)?
         }
+
+        Command::Completions { shell } => print_completions(shell),
     }
     Ok(())
+}
+
+fn print_completions(shell: CompletionShell) {
+    let mut cmd = Cli::command();
+    let name = cmd.get_name().to_string();
+    let mut stdout = io::stdout();
+    match shell {
+        CompletionShell::Bash => clap_complete::generate(clap_complete::Shell::Bash, &mut cmd, name, &mut stdout),
+        CompletionShell::Elvish => clap_complete::generate(clap_complete::Shell::Elvish, &mut cmd, name, &mut stdout),
+        CompletionShell::Fish => clap_complete::generate(clap_complete::Shell::Fish, &mut cmd, name, &mut stdout),
+        CompletionShell::PowerShell => {
+            clap_complete::generate(clap_complete::Shell::PowerShell, &mut cmd, name, &mut stdout)
+        }
+        CompletionShell::Zsh => clap_complete::generate(clap_complete::Shell::Zsh, &mut cmd, name, &mut stdout),
+        CompletionShell::Nushell => {
+            clap_complete::generate(clap_complete_nushell::Nushell, &mut cmd, name, &mut stdout)
+        }
+    }
 }

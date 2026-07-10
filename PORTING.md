@@ -252,7 +252,7 @@ YAML (`customers.yaml`/`hosts.yaml`/`services.yaml` octet-identiques à l'état 
       **globale** du `deployment_id`, champs DB optionnels selon le type de service.
       *Fait quand* : refus d'un id dupliqué + création complète d'un déploiement scratch.
 
-## Phase 6 — Backup / restore `[Claude, relu par toi]`
+## Phase 6 — Backup / restore `[Claude, relu par toi]` — ✅ fait
 
 Le plus gros (455 l.) et le plus dangereux (`DROP DATABASE`). En dernier, une fois les
 patterns rodés.
@@ -325,12 +325,28 @@ patterns rodés.
 
       `cargo build --release`, `cargo clippy`, `cargo test` restent verts (37/38, 1
       `#[ignore]` réseau) après l'ajout.
-- [ ] **6.3** Fermeture de la parité : remplacer la palette `ppos` (fzf) par
+- [x] **6.3** Fermeture de la parité : remplacer la palette `ppos` (fzf) par
       `ppor --help` + complétions shell générées (`clap_complete` sait produire du
       **nushell**). La lecture des services est déjà couverte (2.2) ; le rendu de
       templates part en Phase 9 (provisioning).
       *Fait quand* : `ppor` fait tout ce que le module nu faisait au quotidien ; plus
       aucune commande nu nécessaire.
+
+      **Fait** : `ppor --help` liste déjà chaque commande avec sa description **et** son
+      alias court (généré par `clap` depuis les définitions réelles — ne peut pas dériver
+      du code, contrairement à la liste `$commands` codée en dur dans `ppos`). Ajout de
+      `ppor completions <shell>` (`clap_complete` + `clap_complete_nushell`) qui imprime
+      sur stdout un script à sourcer pour bash/zsh/fish/elvish/powershell/nushell.
+      Vérifié : `ppor completions nushell` chargé avec succès dans un `nu` réel (`use ... *`
+      sans erreur) ; les 5 autres shells génèrent aussi sans erreur.
+
+      **Limite connue, pas corrigée** : `clap_complete_nushell` 4.6.0 ne génère de
+      complétion que pour les noms canoniques des sous-commandes (`set-host`), pas pour
+      leurs `visible_alias` (`sh`) — vérifié dans les sources du crate, ce n'est pas un
+      oubli de configuration. bash/zsh/fish les incluent (vérifié : `ppor,sh)` présent
+      dans la sortie bash). Écrire un générateur nushell maison pour combler ce trou
+      serait disproportionné pour ce que ça apporte ; `ppor --help` reste la référence
+      pour découvrir les alias courts.
 
 ## Phase 7 — Bascule
 
