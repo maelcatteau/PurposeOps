@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 /// Racine du repo, dérivée de $HOME comme le fait `config.nu` (`~/dev/nu-modules/PurposeOps`).
@@ -24,6 +25,15 @@ fn base_path() -> PathBuf {
 
 pub fn context_path() -> PathBuf {
     base_path().join("PurposeOps-config/context.yaml")
+}
+pub fn hosts_config_path() -> PathBuf {
+    base_path().join("PurposeOps-config/hosts.yaml")
+}
+pub fn customers_config_path() -> PathBuf {
+    base_path().join("PurposeOps-config/customers.yaml")
+}
+pub fn services_config_path() -> PathBuf {
+    base_path().join("PurposeOps-config/services.yaml")
 }
 
 /// Un hôte (localhost ou VPS). `port` et `identity_file` restent des String :
@@ -41,10 +51,36 @@ pub struct Host {
 }
 
 /// Dans le contexte, le client n'est stocké que par son abréviation
-/// (le record complet vit dans customers.yaml).
+/// (le record complet vit dans customers.yaml). `set-customer` y met le record
+/// client **moins** `deployments`/`hosts` — aujourd'hui ça se réduit à `abbreviation`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomerLite {
     pub abbreviation: String,
+}
+
+/// Un hôte tel que référencé par un client dans customers.yaml.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomerHost {
+    pub host_id: String,
+    pub path_on_host: String,
+}
+
+/// Record complet d'un client (customers.yaml). `deployments` peut être `[]`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Customer {
+    pub abbreviation: String,
+    #[serde(default)]
+    pub deployments: Vec<Deployment>,
+    pub hosts: Vec<CustomerHost>,
+}
+
+/// Un service disponible (services.yaml) — utilisé par `lss` et, plus tard, le provisioning.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Service {
+    pub template_dir_path: String,
+    pub template_compose_path: String,
+    #[serde(default)]
+    pub variables: Vec<serde_yaml_ng::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +157,26 @@ pub fn save_context(ctx: &Context) -> Result<()> {
     let text = serde_yaml_ng::to_string(ctx)?;
     std::fs::write(&path, text).with_context(|| format!("écriture de {}", path.display()))?;
     Ok(())
+}
+
+/// Charge un YAML de la forme `clé: record` en `BTreeMap<String, T>`.
+/// Les YAML de config (hosts/customers/services) sont tous des maps au top-level.
+fn load_yaml_map<T: DeserializeOwned>(path: PathBuf) -> Result<BTreeMap<String, T>> {
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("lecture de {}", path.display()))?;
+    let map = serde_yaml_ng::from_str(&text)
+        .with_context(|| format!("parsing YAML de {}", path.display()))?;
+    Ok(map)
+}
+
+pub fn load_hosts() -> Result<BTreeMap<String, Host>> {
+    load_yaml_map(hosts_config_path())
+}
+pub fn load_customers() -> Result<BTreeMap<String, Customer>> {
+    load_yaml_map(customers_config_path())
+}
+pub fn load_services() -> Result<BTreeMap<String, Service>> {
+    load_yaml_map(services_config_path())
 }
 
 #[cfg(test)]

@@ -79,6 +79,74 @@ deployment: odoo-perso
 }
 
 #[test]
+fn parse_customers_avec_deployments_vides_et_db_optionnelle() {
+    // Multibikes : deployments []. Sylvie : déploiement avec champs DB. Vaultwarden : sans DB.
+    let yaml = "
+Multibikes:
+  abbreviation: mb
+  deployments: []
+  hosts:
+  - host_id: mcm
+    path_on_host: /home/ngner/multibikes/
+Cocotte:
+  abbreviation: cocotte
+  deployments:
+  - service_name: Vaultwarden
+    hosts:
+    - host_id: ngner
+      path_for_service: /home/ngner/vw/
+      path_for_docker_compose: /home/ngner/vw/compose.yaml
+    deployment_id: ngner-cocotte-Vaultwarden
+  hosts:
+  - host_id: ngner
+    path_on_host: /home/ngner/cocotte/
+Sylvie:
+  abbreviation: Syl
+  deployments:
+  - service_name: Odoo CE
+    hosts:
+    - host_id: ngner
+      path_for_service: /home/ngner/odoo-sylvie/
+      path_for_docker_compose: /home/ngner/odoo-sylvie/docker-compose.yml
+    deployment_id: odoo-prod-sylvie
+    container_name: odoo-prod-sylvie
+    db_container_name: odoo-prod-sylvie-db
+    database_name: Feijoasis
+    db_credentials:
+      host: odoo-prod-sylvie-db
+      port: '5432'
+      user: odoo
+      password: secret
+  hosts:
+  - host_id: ngner
+    path_on_host: /home/ngner/odoo-sylvie
+";
+    let customers: BTreeMap<String, Customer> = serde_yaml_ng::from_str(yaml).unwrap();
+    assert!(customers["Multibikes"].deployments.is_empty());
+    // Service sans DB : les champs optionnels sont None.
+    let vw = &customers["Cocotte"].deployments[0];
+    assert!(vw.db_credentials.is_none());
+    assert!(vw.container_name.is_none());
+    // Service avec DB : présents.
+    let odoo = &customers["Sylvie"].deployments[0];
+    assert_eq!(odoo.database_name.as_deref(), Some("Feijoasis"));
+    assert_eq!(odoo.db_credentials.as_ref().unwrap().port, "5432");
+}
+
+#[test]
+fn parse_services() {
+    let yaml = "
+Vaultwarden:
+  template_dir_path: ~/templates/Vaultwarden/
+  template_compose_path: ~/templates/Vaultwarden/docker-compose.yml
+  variables: []
+";
+    let services: BTreeMap<String, Service> = serde_yaml_ng::from_str(yaml).unwrap();
+    assert!(services.contains_key("Vaultwarden"));
+    assert!(services["Vaultwarden"].variables.is_empty());
+}
+
+#[test]
 fn round_trip_preserve_les_champs() {
     let ctx: Context = serde_yaml_ng::from_str(FULL_CONTEXT).unwrap();
     let dumped = serde_yaml_ng::to_string(&ctx).unwrap();

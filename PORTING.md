@@ -106,22 +106,53 @@ struct Service { template_dir_path, template_compose_path, variables: Vec<...> }
       `ppo-rs/target/release/ppor prompt` (ancienne commande `nu -c` conservée en commentaire).
       *Fait* : ~1,2 ms/prompt contre ~58 ms avant (mesuré, ~48×).
 
-## Phase 2 — Couche config + commandes de lecture/sélection `[Toi]`
+## Phase 2 — Couche config + commandes de lecture/sélection `[Toi → fait par Claude à ta demande]`
 
-*Concepts : modules Rust, ownership sur les maps, I/O fichiers, `inquire`.*
+**Fait** : 16 tests verts (parsing, check vert+rouge, prompt) ; toutes les commandes de
+lecture vérifiées contre le nu ; sélection (`sh`/`sc`/`sd`) croisée nu↔rust cohérente et
+état restauré. `ppor check` (nouveau) vert sur la config réelle.
 
-- [ ] **2.1** Module `config` : chemins (portés depuis `config/config.nu`, `~` résolu via
-      `std::env::home_dir`/crate `home`) + parsing typé des 4 YAML. Bonus nouveau :
-      `ppor check` qui parse tout et signale les incohérences (host_id inconnu, etc.).
-      *Fait quand* : `ppor check` passe au vert sur la config réelle.
-- [ ] **2.2** Commandes **lecture seule** : `hname`, `h`, `lsh`, `c`, `cname`, `lsc`,
-      `lsd`, `pde`, `pdei`, `lss` (sous-commandes clap avec `visible_alias`).
-      *Fait quand* : sorties équivalentes aux commandes nu correspondantes.
-- [ ] **2.3** Commandes de **sélection** (écriture du contexte) : `sh` (set-host), `sc`
-      (set-customer), `sd` (set-deployment) avec `inquire::Select` fuzzy. `sd` stocke le
-      **record complet** du déploiement (schéma actuel post-migration).
-      *Fait quand* : sélection croisée — `ppor sh` puis `ppo hname` côté nu, et
-      inversement — cohérente dans les deux sens.
+
+*Concepts : modules Rust, ownership sur les maps, I/O fichiers, `inquire`, `Result`.*
+
+Structure cible : `config.rs` grossit (modèles + loaders), un module par domaine miroir du
+nu (`host.rs`, `customer.rs`, `deployment.rs`, `service.rs`), `check.rs`, `ui.rs` (le
+sélecteur fuzzy, équivalent de `config-helper.nu` `select_item`).
+
+- [x] **2.1** Étendre `config.rs` : chemins `hosts`/`customers`/`services`, modèles
+      manquants (`Customer` = abbreviation + `deployments: Vec<Deployment>` + `hosts:
+      Vec<CustomerHost>`, `CustomerHost`, `Service`), loaders `load_hosts`/`load_customers`/
+      `load_services`. Tests de parsing des 3 fichiers réels dans `config/tests.rs`.
+      *Fait quand* : `cargo test` parse hosts/customers/services réels (dont `deployments: []`
+      de Multibikes et les champs DB optionnels).
+- [x] **2.2** `ppor check` (`check.rs`, capacité nouvelle) : chaque `host_id` de
+      customers/context existe dans hosts ; `deployment_id` uniques globalement ; le
+      contexte pointe vers un host/customer valides. Rapport lisible, exit ≠ 0 si incohérent.
+      *Fait quand* : vert sur la config réelle ; rouge si on casse un host_id à la main.
+- [x] **2.3** `ui.rs` : `select(prompt, items) -> Option<String>` via `inquire::Select`
+      (filtre fuzzy intégré) — remplace `select_item` **et** le fallback fzf.
+      *Fait quand* : un `ppor` de test affiche un menu fuzzy et renvoie le choix.
+- [x] **2.4** Lecture — **hosts** (`host.rs`) : `get_current_host` → `h`/`hname`, `lsh`
+      (host, name, type local/remote, courant). `visible_alias` clap.
+      *Fait quand* : `h`/`hname`/`lsh` donnent les mêmes infos que côté nu.
+- [x] **2.5** Lecture — **customers** (`customer.rs`) : `c`/`cname`, `lsc`.
+      *Fait quand* : parité d'info avec `c`/`lsc` nu.
+- [x] **2.6** Lecture — **deployments** (`deployment.rs`) : `pde` (id courant), `pdei`
+      (record ; erreur explicite si absent ou ancien format string), `lsd` (déploiements
+      du client courant).
+      *Fait quand* : parité, et `pdei` refuse proprement un contexte sans déploiement.
+- [x] **2.7** Lecture — **services** (`service.rs`) : `lss` (noms des services).
+      *Fait quand* : même liste que `lss` nu.
+- [x] **2.8** Sélection — `sh` (set-host) : arg direct **ou** menu fuzzy ; écrit
+      `context.host = {host_id: <record de hosts.yaml>}`.
+      *Fait quand* : `ppor sh <id>` puis `ppo hname`/`p` côté nu voient le nouvel hôte.
+- [x] **2.9** Sélection — `sc` (set-customer) : écrit `context.customer = {name:
+      <customer moins deployments/hosts>}`. Vérif cohérence hôte↔client ; si l'hôte courant
+      n'est pas un hôte du client, proposer (`inquire::Confirm`) de basculer l'hôte aussi.
+      *Fait quand* : `ppor sc <name>` cohérent, et le prompt de bascule d'hôte fonctionne.
+- [x] **2.10** Sélection — `sd` (set-deployment) : exige un client sélectionné ; écrit le
+      **record complet** du déploiement ; même logique de cohérence d'hôte que `sc`.
+      *Fait quand* : sélection croisée nu↔rust cohérente ; `ppo pdei` relit le record écrit.
 
 ## Phase 3 — SSH ControlMaster `[Mixte : toi la structure, revue ensemble]`
 
