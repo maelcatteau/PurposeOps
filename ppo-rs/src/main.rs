@@ -1,6 +1,6 @@
 // ppo-rs — portage Rust de PurposeOps. Plan : ../PORTING.md
 //
-// Phases 1–2 : prompt + couche config + commandes de lecture/sélection.
+// Phases 1–3 : prompt + couche config + lecture/sélection + SSH ControlMaster.
 // Dépendances : clap (derive) · serde (derive) · serde_yaml_ng · inquire · anyhow
 
 mod check;
@@ -10,6 +10,7 @@ mod deployment;
 mod host;
 mod prompt;
 mod service;
+mod ssh;
 mod ui;
 
 use clap::{Parser, Subcommand};
@@ -73,6 +74,16 @@ enum Command {
     /// Liste tous les services disponibles.
     #[command(visible_alias = "lss")]
     ListServices,
+
+    /// Ferme la connexion SSH maître de l'hôte courant.
+    #[command(visible_alias = "close")]
+    CloseConnection,
+    /// Ferme toutes les connexions SSH maîtres.
+    #[command(visible_alias = "closeall")]
+    CloseAllConnections,
+    /// Liste les connexions SSH maîtres actives.
+    #[command(visible_alias = "lsconn")]
+    ListConnections,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -97,6 +108,10 @@ fn main() -> anyhow::Result<()> {
         Command::SetDeployment { deployment_id } => deployment::cmd_sd(deployment_id)?,
 
         Command::ListServices => service::cmd_lss()?,
+
+        Command::CloseConnection => ssh::close_current_master_connection()?,
+        Command::CloseAllConnections => ssh::close_all_master_connections(),
+        Command::ListConnections => ssh::list_master_connections(),
     }
     Ok(())
 }

@@ -154,7 +154,7 @@ sélecteur fuzzy, équivalent de `config-helper.nu` `select_item`).
       **record complet** du déploiement ; même logique de cohérence d'hôte que `sc`.
       *Fait quand* : sélection croisée nu↔rust cohérente ; `ppo pdei` relit le record écrit.
 
-## Phase 3 — SSH ControlMaster `[Mixte : toi la structure, revue ensemble]`
+## Phase 3 — SSH ControlMaster `[Mixte → fait par Claude à ta demande]`
 
 *Concepts : `std::process::Command`, codes de retour, gestion de fichiers/sockets.*
 
@@ -163,12 +163,24 @@ Décision : **répliquer le schéma actuel** (sockets `controlmasters/user@hostn
 restent ainsi **partagés avec le côté nu** pendant la coexistence. `openssh` reste une
 option post-bascule.
 
-- [ ] **3.1** `is_master_active`, `create_master_connection`, `run_with_master`
-      (mêmes chemins de sockets que `ssh-manager.nu`). Les commandes distantes passent en
-      arguments de `Command` — plus d'échappement `{{`/`}}` à la main.
-      *Fait quand* : `ppor` exécute `uptime` sur un VPS **en réutilisant un socket créé
-      par le côté nu**, et inversement.
-- [ ] **3.2** `close`, `closeall`, `lsconn` (parsing des noms de sockets).
+Note : `is_master_active`/`create_master_connection`/`run_with_master` sont des fonctions
+internes côté nu aussi (aucune commande `ppo` publique ne les appelle directement — seuls
+`docker/core.nu` et `backup.nu` le font, Phases 4/6). Donc pas de nouvelle commande CLI
+ici ; leur preuve de fonctionnement passe par un test d'intégration `#[ignore]` (réseau
+réel), lancé manuellement.
+
+- [x] **3.1** `src/ssh.rs`. Les commandes distantes passent en un seul argument à `ssh`
+      (le shell distant les reçoit intactes) — plus d'échappement manuel de quoting côté
+      Rust, seul l'échappement `{{`/`}}` du nu est reproduit à l'identique.
+      **Fait, vérifié en live dans les deux sens** : (a) le nu crée le master vers mcm,
+      `cargo test -- --ignored live_run_with_master_uptime_on_mcm` l'a réutilisé
+      (exécution en 0.07 s, socket inchangé) ; (b) après `closeall`, le test Rust a recréé
+      le master, et un `run_with_master` lancé depuis le nu l'a réutilisé (socket
+      identique avant/après, aucune recréation).
+- [x] **3.2** `close`/`closeall`/`lsconn` (clap, alias identiques au nu), parsing des noms
+      de sockets `user@hostname:port` testé unitairement (cas valide + invalide).
+      *Fait* : `ppor closeall` a fermé la connexion réelle, `ppor lsconn` confirme vide,
+      `ppor close` testé sur la connexion courante (mcm).
       *Fait quand* : parité avec les trois commandes nu.
 
 ## Phase 4 — Docker `[Toi]`
