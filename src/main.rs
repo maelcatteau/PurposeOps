@@ -319,19 +319,27 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn print_completions(shell: CompletionShell) {
+    generate_completions(shell, &mut io::stdout());
+}
+
+/// Séparée de `print_completions` uniquement pour être testable sans écrire sur la
+/// vraie stdout : un `&mut Vec<u8>` en test, `io::stdout()` en production.
+fn generate_completions<W: io::Write>(shell: CompletionShell, out: &mut W) {
     let mut cmd = Cli::command();
     let name = cmd.get_name().to_string();
-    let mut stdout = io::stdout();
     match shell {
-        CompletionShell::Bash => clap_complete::generate(clap_complete::Shell::Bash, &mut cmd, name, &mut stdout),
-        CompletionShell::Elvish => clap_complete::generate(clap_complete::Shell::Elvish, &mut cmd, name, &mut stdout),
-        CompletionShell::Fish => clap_complete::generate(clap_complete::Shell::Fish, &mut cmd, name, &mut stdout),
+        CompletionShell::Bash => clap_complete::generate(clap_complete::Shell::Bash, &mut cmd, name, out),
+        CompletionShell::Elvish => clap_complete::generate(clap_complete::Shell::Elvish, &mut cmd, name, out),
+        CompletionShell::Fish => clap_complete::generate(clap_complete::Shell::Fish, &mut cmd, name, out),
         CompletionShell::PowerShell => {
-            clap_complete::generate(clap_complete::Shell::PowerShell, &mut cmd, name, &mut stdout)
+            clap_complete::generate(clap_complete::Shell::PowerShell, &mut cmd, name, out)
         }
-        CompletionShell::Zsh => clap_complete::generate(clap_complete::Shell::Zsh, &mut cmd, name, &mut stdout),
+        CompletionShell::Zsh => clap_complete::generate(clap_complete::Shell::Zsh, &mut cmd, name, out),
         CompletionShell::Nushell => {
-            clap_complete::generate(clap_complete_nushell::Nushell, &mut cmd, name, &mut stdout)
+            clap_complete::generate(clap_complete_nushell::Nushell, &mut cmd, name, out)
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

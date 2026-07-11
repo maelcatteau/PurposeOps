@@ -189,3 +189,28 @@ identity_key: enc:abcdefIsAgeCiphertext==
     let reparsed: Host = serde_yaml_ng::from_str(&dumped).unwrap();
     assert_eq!(reparsed.identity_key.as_deref(), Some("enc:abcdefIsAgeCiphertext=="));
 }
+
+#[test]
+fn capitalize_met_en_majuscule_la_premiere_lettre() {
+    assert_eq!(capitalize("host"), "Host");
+}
+
+#[test]
+fn capitalize_chaine_vide_reste_vide() {
+    assert_eq!(capitalize(""), "");
+}
+
+#[test]
+fn capitalize_un_seul_caractere() {
+    assert_eq!(capitalize("h"), "H");
+}
+
+#[test]
+fn capitalize_deja_en_majuscule_inchange() {
+    assert_eq!(capitalize("Host"), "Host");
+}
+
+#[test]
+fn capitalize_premiere_lettre_accentuee() {
+    assert_eq!(capitalize("étape"), "Étape");
+}

@@ -61,3 +61,83 @@ fn round_trip_via_argument_unique_reconstruit_le_mot_original() {
     let actual: Vec<&str> = got.lines().collect();
     assert_eq!(actual, expected, "commande construite : {script}");
 }
+
+#[test]
+fn parse_ndjson_plusieurs_lignes() {
+    let input = b"{\"Names\":\"a\",\"Image\":\"i1\",\"Status\":\"Up\",\"Ports\":\"\"}\n{\"Names\":\"b\",\"Image\":\"i2\",\"Status\":\"Up\",\"Ports\":\"\"}\n";
+    let entries: Vec<PsEntry> = parse_ndjson(input).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].names, "a");
+    assert_eq!(entries[1].names, "b");
+}
+
+#[test]
+fn parse_ndjson_ignore_les_lignes_vides() {
+    let input = b"{\"Names\":\"a\",\"Image\":\"i\",\"Status\":\"Up\",\"Ports\":\"\"}\n\n\n";
+    let entries: Vec<PsEntry> = parse_ndjson(input).unwrap();
+    assert_eq!(entries.len(), 1);
+}
+
+#[test]
+fn parse_ndjson_entree_vide_donne_liste_vide() {
+    let entries: Vec<PsEntry> = parse_ndjson(b"").unwrap();
+    assert!(entries.is_empty());
+}
+
+#[test]
+fn parse_ndjson_ligne_invalide_est_une_erreur() {
+    let result: Result<Vec<PsEntry>> = parse_ndjson(b"pas du json\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn regex_contains_aucun_filtre_matche_toujours() {
+    assert!(regex_contains(&None, "n'importe quoi").unwrap());
+}
+
+#[test]
+fn regex_contains_filtre_qui_matche() {
+    let filter = Some("^odoo-.*".to_string());
+    assert!(regex_contains(&filter, "odoo-prod").unwrap());
+}
+
+#[test]
+fn regex_contains_filtre_qui_ne_matche_pas() {
+    let filter = Some("^odoo-.*".to_string());
+    assert!(!regex_contains(&filter, "vaultwarden").unwrap());
+}
+
+#[test]
+fn regex_contains_regex_invalide_est_une_erreur() {
+    let filter = Some("(".to_string());
+    assert!(regex_contains(&filter, "peu importe").is_err());
+}
+
+#[test]
+fn container_op_need_all_vrai_seulement_pour_start() {
+    assert!(ContainerOp::Start.need_all());
+    assert!(!ContainerOp::Stop.need_all());
+    assert!(!ContainerOp::Restart.need_all());
+}
+
+#[test]
+fn container_op_labels_distincts_par_variante() {
+    let ops = [ContainerOp::Start, ContainerOp::Stop, ContainerOp::Restart];
+    let headers: Vec<&str> = ops.iter().map(|o| o.header()).collect();
+    let verbs: Vec<&str> = ops.iter().map(|o| o.verb()).collect();
+    let participles: Vec<&str> = ops.iter().map(|o| o.past_participle()).collect();
+    let commands: Vec<&str> = ops.iter().map(|o| o.docker_command()).collect();
+    for labels in [&headers, &verbs, &participles, &commands] {
+        let mut sorted = labels.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 3, "attendu 3 libellés distincts, obtenu {labels:?}");
+    }
+}
+
+#[test]
+fn container_op_docker_command_correspond_au_sous_commande_docker_attendue() {
+    assert_eq!(ContainerOp::Start.docker_command(), "start");
+    assert_eq!(ContainerOp::Stop.docker_command(), "stop");
+    assert_eq!(ContainerOp::Restart.docker_command(), "restart");
+}

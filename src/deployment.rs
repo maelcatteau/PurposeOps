@@ -428,3 +428,6 @@ pub fn cmd_ddep(deployment_id: Option<String>) -> Result<()> {
     println!("✅ Déploiement '{selected}' supprimé pour '{customer_name}'");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
