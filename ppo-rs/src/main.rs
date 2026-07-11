@@ -4,6 +4,7 @@
 // Dépendances : clap (derive) · serde (derive) · serde_yaml_ng · inquire · anyhow
 
 mod backup;
+mod bootstrap;
 mod check;
 mod config;
 mod customer;
@@ -158,6 +159,13 @@ enum Command {
     /// Déploie un nouveau service de bout en bout (wizard). Capacité nouvelle, aucun
     /// équivalent côté nu.
     Provision,
+
+    /// Installe les logiciels de base (Docker, Nushell, Caddy, Netdata) sur un hôte
+    /// (Phase 10). Capacité nouvelle, aucun équivalent côté nu.
+    Bootstrap {
+        /// Host id (menu fuzzy si omis).
+        host_id: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -280,6 +288,8 @@ fn main() -> anyhow::Result<()> {
         }
 
         Command::Provision => provision::cmd_provision()?,
+
+        Command::Bootstrap { host_id } => bootstrap::cmd_bootstrap(host_id)?,
     }
     Ok(())
 }

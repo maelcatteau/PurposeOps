@@ -89,6 +89,7 @@ Grouped by area; short aliases are what you'll actually type day to day.
 |---|---|
 | `template render <service> <name>` | render a service template to a compose file, no deployment |
 | `provision` | full wizard: render → push to host → `docker compose up -d` → register the deployment |
+| `bootstrap [host_id]` | detect and install base host software (Docker, Nushell, Caddy, Netdata) |
 
 **Secrets** (credentials encrypted at rest — see Architecture below)
 | Command | Does |
@@ -126,6 +127,11 @@ Full `--help` (including flags) is always the source of truth: `ppo --help`, `pp
 - **Provisioning**: `ppo provision` renders a `templates/<Service>/` compose file,
   pushes it to the target host (base64-embedded over the existing SSH connection — no
   scp/rsync dependency), brings the stack up, and registers the deployment.
+- **Host bootstrap**: `ppo bootstrap` installs base software (Docker, Nushell, Caddy,
+  Netdata) directly on a host — live-checked each run (nothing cached in `hosts.yaml`),
+  apt-based (Debian/Ubuntu). Netdata runs on the host rather than in a container so it can
+  auto-discover local Docker containers; a fleet-wide view goes through Netdata itself
+  (Cloud or a self-hosted parent) rather than a custom `ppo` aggregator.
 
 ## Development
 
@@ -152,15 +158,23 @@ cleans up even on failure, so it's safe to run against the real config. **Keep i
 current**: per `CLAUDE.md`, any change touching a command it exercises should update the
 script and get a run before the work is considered done.
 
+`ppo bootstrap` (installing software on a host) has its own equivalent, against a real
+VirtualBox VM rather than a container — Docker-in-Docker and systemd-in-a-container are
+both fragile in ways unrelated to `bootstrap.rs` itself:
+
+```sh
+tests/vm/setup.sh                     # one-time: provision the VM, snapshot it "clean"
+python3 tests/bootstrap_workflow.py   # repeatable: revert, boot, bootstrap, verify, clean up
+```
+
 Tests live in a sibling `tests.rs` file next to the module they cover (e.g.
 `src/backup.rs` + `src/backup/tests.rs`), never inlined — see `CLAUDE.md` for the exact
 convention.
 
 ## Roadmap
 
-Phases 1–9 (nu→Rust parity, the cutover, secrets encryption, provisioning) are done.
-Remaining, independent, any order — see `PORTING.md` for details:
+Phases 1–10 (nu→Rust parity, the cutover, secrets encryption, provisioning, host
+bootstrap) are done. Remaining, independent, any order — see `PORTING.md` for details:
 
-- **10** — fleet status view (`ppo fleet status`: containers/uptime/disk across every host at once)
 - **11** — automated backups (rotation/retention, scheduled `backup all`)
 - **12** — TUI (`ratatui`) over the same CLI core

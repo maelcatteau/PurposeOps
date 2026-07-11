@@ -40,9 +40,9 @@ module still exists in the repo as a reference/fallback but is no longer loaded 
   live in the sibling file `src/<mod>/tests.rs` (with `use super::*;` to reach private items). A file
   module `foo.rs` may coexist with a `foo/` directory for its submodules (2018+ edition) — that's how
   `config.rs` + `config/tests.rs` and `prompt.rs` + `prompt/tests.rs` are laid out.
-- **Progress: Phases 1–8 done** (prompt, config CRUD, SSH ControlMaster, Docker, backup/restore,
-  shell completions, the cutover, and secrets-at-rest encryption — see `PORTING.md` for what was
-  verified at each step). Phases 9–12 (provisioning, fleet view, automated backups, TUI) are
+- **Progress: Phases 1–10 done** (prompt, config CRUD, SSH ControlMaster, Docker, backup/restore,
+  shell completions, the cutover, secrets-at-rest encryption, provisioning, and host bootstrap —
+  see `PORTING.md` for what was verified at each step). Phases 11–12 (automated backups, TUI) are
   independent, unstarted, and can be tackled in any order.
 - `cargo test` covers only pure logic (quoting, YAML round-trips, prompt formatting, `age`
   encrypt/decrypt). Anything touching a remote host, Docker, or an interactive `inquire` prompt is
@@ -60,6 +60,19 @@ module still exists in the repo as a reference/fallback but is no longer loaded 
   schema, `secrets.rs`, `ssh.rs`), update the script alongside the change, and run it (`cargo test`
   too) before considering the work done — the same way `cargo test`/`cargo clippy` already get run
   as a matter of course. Treat it as part of the verification pass, not an optional extra.
+- **`ppo-rs/tests/bootstrap_workflow.py`**: same idea, for `ppo bootstrap` (installing Docker/
+  Nushell/Caddy/Netdata on a host — see PORTING.md Phase 10.2). A container host would be
+  misleading here (Docker-in-Docker and systemd-in-a-container are both fragile in ways unrelated
+  to `bootstrap.rs` itself), so this drives a real VirtualBox VM instead, reverted to a `clean`
+  cloud-init snapshot before every run. One-time setup: `tests/vm/setup.sh` (downloads an Ubuntu
+  24.04 cloud image, provisions it, snapshots it — slow, not part of the repeatable test). Then
+  `python3 tests/bootstrap_workflow.py` reverts, boots, runs `ppo bootstrap`, verifies each
+  capability actually works over a direct SSH connection (not through `ppo`), checks a second
+  `ppo bootstrap` run installs nothing (idempotency), and cleans up. Same currency rule as
+  `integration_workflow.py`: update and run it whenever a change touches `bootstrap.rs` or
+  `ssh::exec_shell`/`exec_shell_checked`. Note: `VBoxManage snapshot restore` reverts machine
+  settings (e.g. `--uartmode1`) as well as disk state, not just the disk — apply any one-off
+  `modifyvm` change *after* a revert, not before, or it's silently undone.
 
 ## Architecture
 

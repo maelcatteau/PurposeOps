@@ -650,17 +650,114 @@ Déployer un nouveau service en une commande. Réutilise SSH (3), Docker (4), CR
       `tests/integration_workflow.py` relancé après coup (aucune régression) suite aux
       changements de visibilité dans `deployment.rs`.
 
-## Phase 10 — Vue de flotte / health `[Claude]`
+## Phase 10 — Monitoring de flotte `[Claude]` — ✅ fait
 
-Nouvelle capacité : l'état de tous les hôtes d'un coup.
+**Changement de direction par rapport au plan initial** : la version originale de cette
+phase prévoyait un `ppor fleet status` maison (agrégation SSH parallèle de `docker ps`/
+`uptime`/`df` en tableau). Décision prise en discussion : ne pas réinventer un système de
+monitoring — l'historique, l'alerting et les dashboards de Netdata (agent par hôte,
+auto-découverte des conteneurs Docker locaux, installé **directement sur l'hôte**, pas en
+conteneur, pour cette auto-découverte) couvrent ce besoin bien mieux qu'un snapshot à la
+demande. `10.1`/`10.2` (`fleet status`/`fleet logs`) sont donc abandonnées au profit d'un
+module de bootstrap qui installe Netdata (et les autres logiciels de base) sur un hôte.
 
-- [ ] **10.1** `ppor fleet status` : pour chaque hôte de `hosts.yaml`, **en parallèle**
-      (`std::thread` — pas besoin d'async), conteneurs up/down + uptime + disque, en
-      tableau. Hôtes injoignables signalés, pas bloquants.
-      *Fait quand* : tableau lisible de toute la flotte.
-- [ ] **10.2** (optionnel) `ppor fleet logs` / `fleet exec` : tail de logs et commande
-      ad hoc ciblée par client/déploiement.
-      *Fait quand* : logs d'un déploiement rapatriés sans session SSH manuelle.
+- [x] **10.1** `[Claude]` `ppo bootstrap [host_id]` : installation des logiciels de base
+      d'un hôte (Docker, Nushell, Caddy, Netdata) — capacité entièrement nouvelle, aucun
+      équivalent côté nu.
+      *Fait quand* : logiciels manquants détectés et installés sur un hôte réel sans
+      toucher à ce qui est déjà présent.
+
+      **Fait** : `src/bootstrap.rs`. Module séparé plutôt qu'ajout à `provision.rs` : une
+      liste de capacités fixes (Docker, Nushell, Caddy, Netdata), définie par l'opérateur
+      dans le code, pas par un wizard d'édition à chaud comme `services.yaml` — mérite un
+      fichier à part du reste de la CRUD config, à la demande explicite du sujet. Chaque
+      capacité a une commande de détection (`command -v ...`) et une commande
+      d'installation, écrites pour un hôte Debian/Ubuntu (apt) — la flotte actuelle n'a
+      pas besoin de détection de distribution. Aucun état "installé" mis en cache dans
+      `hosts.yaml` : chaque run revérifie en direct (`is_installed`), bon marché à cette
+      échelle et évite toute dérive entre config et réalité de l'hôte. Détection en
+      premier pour tous les hôtes, puis sélection multiple (`inquire::MultiSelect`,
+      nouveau dans `ui.rs`) limitée à ce qui manque, une seule confirmation, puis
+      installation capacité par capacité.
+
+      Docker : script officiel `get.docker.com` (gère lui-même l'élévation `sudo` si
+      besoin). Netdata : `kickstart.sh --non-interactive` (idem), installé sur l'hôte et
+      non en conteneur pour que l'auto-découverte des conteneurs Docker locaux fonctionne.
+      Caddy : dépôt apt officiel (clé GPG + `sources.list.d`) puis `apt-get install`.
+      Nushell : pas de dépôt apt officiel, binaire de la dernière release GitHub
+      téléchargé et installé dans `/usr/local/bin`.
+
+      Extraction de `ssh::exec_shell`/`exec_shell_checked` (gère le cas `localhost` en
+      plus de `run_with_master`) depuis l'ancien `exec_remote_shell_checked` privé de
+      `provision.rs`, pour que les deux modules partagent la même primitive plutôt que de
+      dupliquer la logique locale/distante — `provision.rs` mis à jour pour l'utiliser.
+
+      Partie pure testée unitairement (`missing_capabilities`, injectée par une closure de
+      présence plutôt que de dépendre de SSH) : unicité des labels, commandes non vides,
+      filtrage correct. 5 tests, `cargo test` : 60/61 verts (le test SSH live existant
+      reste `#[ignore]`).
+
+      Vérifié en live contre l'hôte réel `ngner` (celui déjà utilisé en 9.2) : détection
+      correcte de l'état réel (Docker/Nushell/Netdata déjà présents, Caddy absent),
+      annulation propre de la sélection multiple (Échap) sans erreur. Installation
+      effective **volontairement pas testée en direct sur `ngner`** : c'est un hôte de
+      production avec du trafic client réel, et y ajouter Caddy sort du cadre d'une
+      vérification — décision laissée à l'opérateur plutôt que prise unilatéralement
+      pendant la vérification.
+- [x] **10.2** `[Claude]` Harnais de test dédié : une VM VirtualBox plutôt qu'un conteneur
+      Docker (Docker-in-Docker et systemd-in-conteneur sont tous deux des sources connues
+      de faux échecs sans rapport avec `bootstrap.rs`, et la flotte réelle est faite de VPS
+      complets, pas de conteneurs), pour pouvoir vérifier une installation *effective* sans
+      se contenter de la détection contre `ngner` ci-dessus.
+      *Fait quand* : cycle complet install → vérification fonctionnelle → ré-installation
+      idempotente, rejouable sans réintervention manuelle.
+
+      **Fait** : `tests/vm/` (`setup.sh`, `vmctl.sh`, `lib.sh`) + `tests/bootstrap_workflow.py`.
+      `setup.sh` provisionne une fois (image cloud Ubuntu 24.04 — la distribution réelle du
+      poste local et de la prod, cf. décision utilisateur ci-dessus — convertie en VDI,
+      cloud-init pour l'utilisateur `ppo` avec sudo NOPASSWD et une clé SSH dédiée, NAT +
+      port forwardé pour l'accès SSH) puis prend un snapshot `clean` une fois le
+      provisionnement terminé. `bootstrap_workflow.py` (même patron pexpect
+      qu'`integration_workflow.py`) restaure ce snapshot et redémarre la VM à chaque run —
+      c'est ce qui rend le test rejouable sans re-télécharger/re-provisionner à chaque fois.
+      Orchestration VirtualBox (`VBoxManage`) confinée à `vmctl.sh` en shell ; Python reste
+      concentré sur le pilotage de `ppo` via `pexpect`, même séparation des responsabilités
+      qu'ailleurs dans le projet.
+
+      **Deux bugs réels trouvés et corrigés en construisant ce harnais** (ni l'un ni
+      l'autre dans `bootstrap.rs` — tous deux dans `setup.sh`, découverts uniquement parce
+      que le scénario "redémarrer depuis un snapshot" n'avait jamais été exercé avant) :
+      1. `ssh.service` échouait systématiquement (`ExecStartPre=/usr/sbin/sshd -t` en
+         échec) sur tout redémarrage **après** le premier — jamais sur le tout premier
+         boot. Cause : `setup.sh` faisait un `VBoxManage controlvm poweroff` (arrêt dur)
+         immédiatement après la fin de `cloud-init status --wait`, sans laisser le temps
+         aux clés hôte SSH fraîchement régénérées par cloud-init d'être effectivement
+         synchronisées sur disque avant que le snapshot ne fige cet état — un
+         redémarrage ultérieur récupère alors des fichiers de clé incomplets/incohérents.
+         Diagnostiqué en basculant le port série de la VM en mode socket interactif
+         (`--uartmode1 server`, plutôt que le `file` habituel) et en s'y connectant via
+         `socat` piloté par un script `pexpect` jetable (une console série ne répond pas
+         au réseau/SSH, donc aucun autre moyen d'atteindre une VM dont SSH est justement
+         cassé) pour lire `systemctl status`/`journalctl` directement. Corrigé en
+         remplaçant l'arrêt dur par `sudo shutdown -h now` côté invité et une attente
+         active de l'état `poweroff` avant de prendre le snapshot (repli sur l'arrêt dur
+         si ça dépasse 120s).
+      2. `VBoxManage modifyvm` (p. ex. changer `--uartmode1` pour le diagnostic ci-dessus)
+         appliqué **avant** un `VBoxManage snapshot restore` se voit annulé par la
+         restauration — les snapshots VirtualBox capturent aussi les réglages machine, pas
+         seulement l'état disque. Il faut appliquer ce genre de changement après le
+         restore, pas avant.
+
+      Cycle complet vérifié à plusieurs reprises : `ch` (hôte pointant sur
+      `127.0.0.1:<port forwardé>`, délibérément pas `localhost`, pour emprunter le vrai
+      chemin ControlMaster) → `ppo bootstrap` sur VM fraîche (les 4 capacités détectées
+      manquantes, sélection totale via le raccourci "→" de `MultiSelect`, installation) →
+      vérification fonctionnelle **en direct par SSH, indépendamment de `ppo`** (`docker
+      run --rm hello-world` réussit, pas seulement `docker --version` ; `nu`/`caddy`
+      répondent ; l'API locale de Netdata répond, avec ré-essais courts car elle renvoie
+      503 le temps de son premier cycle de collecte) → deuxième `ppo bootstrap` sur la même
+      VM, confirmant qu'aucune capacité n'est réinstallée → `dh`. `hosts.yaml`/
+      `context.yaml` restaurés à l'identique après coup, comme `integration_workflow.py`.
 
 ## Phase 11 — Backups automatisés `[Claude, relu par toi]`
 

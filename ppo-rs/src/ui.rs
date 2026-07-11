@@ -2,7 +2,7 @@
 //! les prompts `input`). `inquire` fournit le filtre fuzzy nativement, ce qui remplace
 //! à la fois `input list --fuzzy` et le fallback `fzf` du code nu.
 
-use inquire::{Confirm, Select, Text};
+use inquire::{Confirm, MultiSelect, Select, Text};
 
 /// Menu de sélection fuzzy. `None` si liste vide ou si l'utilisateur annule (Échap).
 pub fn select(prompt: &str, items: Vec<String>) -> Option<String> {
@@ -10,6 +10,15 @@ pub fn select(prompt: &str, items: Vec<String>) -> Option<String> {
         return None;
     }
     Select::new(prompt, items).prompt().ok()
+}
+
+/// Menu de sélection multiple (espace pour cocher). `None` si liste vide ou annulation
+/// (Échap) ; `Some(vec![])` si validé sans rien cocher.
+pub fn multi_select(prompt: &str, items: Vec<String>) -> Option<Vec<String>> {
+    if items.is_empty() {
+        return None;
+    }
+    MultiSelect::new(prompt, items).prompt().ok()
 }
 
 /// Confirmation oui/non (défaut : non). Annulation → `false`.

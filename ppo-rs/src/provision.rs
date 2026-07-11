@@ -18,21 +18,6 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use crate::config::{self, Deployment, DeploymentHost, Host};
 use crate::{customer, deployment, docker, ssh, template, ui};
 
-/// Exécute une commande shell brute sur l'hôte (locale si `hostname == "localhost"`,
-/// sinon via la connexion ControlMaster) et vérifie son statut de sortie.
-fn exec_remote_shell_checked(cmd: &str, host: &Host, step: &str) -> Result<()> {
-    let output = if host.hostname == "localhost" {
-        std::process::Command::new("sh").arg("-c").arg(cmd).output()?
-    } else {
-        ssh::run_with_master(host, cmd)?
-    };
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("Échec de l'étape '{step}' : {}", stderr.trim());
-    }
-    Ok(())
-}
-
 /// Pousse `content` vers `remote_path` sur `host`. Écriture directe pour `localhost` ;
 /// pour un hôte distant, encode en base64 et l'écrit via une commande shell sur la
 /// connexion ControlMaster existante — il n'y a pas d'autre mécanisme de transfert de
@@ -40,7 +25,7 @@ fn exec_remote_shell_checked(cmd: &str, host: &Host, step: &str) -> Result<()> {
 fn push_file(host: &Host, remote_path: &str, content: &str) -> Result<()> {
     if let Some(parent) = Path::new(remote_path).parent() {
         let parent = parent.display();
-        exec_remote_shell_checked(&format!("mkdir -p '{parent}'"), host, "création du dossier parent")?;
+        ssh::exec_shell_checked(host, &format!("mkdir -p '{parent}'"), "création du dossier parent")?;
     }
 
     if host.hostname == "localhost" {
@@ -50,7 +35,8 @@ fn push_file(host: &Host, remote_path: &str, content: &str) -> Result<()> {
 
     let encoded = BASE64.encode(content.as_bytes());
     let cmd = format!("echo '{encoded}' | base64 -d > '{remote_path}'");
-    exec_remote_shell_checked(&cmd, host, "envoi du docker-compose.yml")
+    ssh::exec_shell_checked(host, &cmd, "envoi du docker-compose.yml")?;
+    Ok(())
 }
 
 /// `provision` — wizard interactif : rendu du template → aperçu compose + déploiement →
@@ -133,9 +119,9 @@ pub fn cmd_provision() -> Result<()> {
     }
 
     println!("📁 Création du dossier distant si nécessaire ({path_for_service})...");
-    exec_remote_shell_checked(
-        &format!("mkdir -p '{path_for_service}'"),
+    ssh::exec_shell_checked(
         &host,
+        &format!("mkdir -p '{path_for_service}'"),
         "création du dossier distant",
     )?;
 

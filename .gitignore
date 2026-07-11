@@ -1,6 +1,14 @@
 ./controlmasters
 ppo-rs/target/
 
+ppo-rs/tests/vm/*.img
+ppo-rs/tests/vm/*.vdi
+ppo-rs/tests/vm/*.iso
+ppo-rs/tests/vm/id_ed25519*
+ppo-rs/tests/vm/user-data
+ppo-rs/tests/vm/meta-data
+ppo-rs/tests/vm/serial.log
+
 config/config.yaml.first
 config/context.yaml
 config/hosts.yaml

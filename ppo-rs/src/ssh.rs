@@ -202,6 +202,29 @@ pub fn run_with_master(host: &Host, command: &str) -> Result<Output> {
     Ok(Command::new("ssh").args(&args).output()?)
 }
 
+/// Exécute une commande shell brute sur l'hôte : localement si `hostname == "localhost"`,
+/// sinon via la connexion ControlMaster. Contrairement à `run_with_master`, gère aussi le
+/// cas local — c'est la primitive commune à `provision` et `bootstrap` pour toute commande
+/// qui n'est pas du `docker` (voir `docker::run_docker_command` pour ce cas-là).
+pub fn exec_shell(host: &Host, cmd: &str) -> Result<Output> {
+    if host.hostname == "localhost" {
+        Ok(Command::new("sh").arg("-c").arg(cmd).output()?)
+    } else {
+        run_with_master(host, cmd)
+    }
+}
+
+/// Comme `exec_shell`, mais transforme un code de sortie non nul en erreur (stderr inclus).
+/// `step` identifie l'étape dans le message d'erreur.
+pub fn exec_shell_checked(host: &Host, cmd: &str, step: &str) -> Result<Output> {
+    let output = exec_shell(host, cmd)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("Échec de l'étape '{step}' : {}", stderr.trim());
+    }
+    Ok(output)
+}
+
 /// Ferme la connexion maître d'un hôte donné. `true` si fermée ou déjà absente.
 pub fn close_master_connection(host: &Host) -> bool {
     let socket = control_socket(host);
