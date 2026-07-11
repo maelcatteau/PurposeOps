@@ -1027,6 +1027,60 @@ duplication (pas de script bash généré séparément : l'agent, c'est le vrai 
          puis `tests/vm/setup.sh --recreate` (rapide : réutilise l'image cloud déjà
          téléchargée).
 
+## Nouveau template : Odoo `[Claude]`
+
+Hors plan de phases — ajout d'un troisième template (`templates/Odoo/`, enregistré dans
+`services.yaml`) aux côtés de Vaultwarden/Caddy, à la demande explicite du sujet, à partir
+du déploiement réel `~/odoo-perso` sur l'hôte `mcm` (inspecté en direct par SSH : son
+`docker-compose.yml`, `Dockerfile.prod`, `entrypoint.sh`, `odoo.conf`).
+
+**Décision de conception** : `odoo-perso` construit son image localement, mais son
+`Dockerfile.prod` s'avère être quasiment l'image officielle Odoo (le Dockerfile publié par
+Odoo S.A.) reconstruite à la main, sans rien d'ajouté que l'image publique `odoo:18.0`
+n'ait déjà. Décidé en discussion : le template pousse `odoo:18.0` directement plutôt que de
+répliquer un contexte de build complet (Dockerfile + entrypoint + config) — cohérent avec
+Vaultwarden/Caddy qui ne font eux non plus que tirer une image publique, et évite d'étendre
+`provision.rs` pour pousser autre chose qu'un seul `docker-compose.yml` rendu.
+
+Deux services dans un seul template (`{{service_name}}` app + `{{db_service_name}}`
+Postgres) : premier template du projet à en avoir besoin — `service_name`/`container_name`
+restent auto-remplis depuis `docker_service_name` comme pour Vaultwarden/Caddy (voir
+`template.rs`), mais le service Postgres a besoin de son propre nom, saisi une fois et
+réutilisé pour sa clé de service ET son `container_name`. Réseau interne dédié
+(`{{service_name}}-internal`, dérivé par substitution littérale sans variable
+supplémentaire — même technique que le réseau externe de Caddy) pour que Postgres ne soit
+joignable que par l'app, pas exposé sur le réseau du reverse proxy.
+
+**Bug réel trouvé en vérifiant le template en direct** (`docker compose up` réel, pas
+seulement `docker compose config`) : la première version montait `/var/lib/odoo` et
+`/var/lib/postgresql/data` sur des chemins hôte (bind mounts), au même chemin que
+`custom-addons`/`config`. `odoo:18.0` tourne en UID 100/GID 101 (`odoo`) ; un dossier hôte
+fraîchement créé appartient à l'utilisateur courant, pas à cet UID — `PermissionError:
+/var/lib/odoo/.local` au démarrage, `/web/login` répondant en 500. Même classe de bug que
+l'incident filestore de la Phase 6 (déjà documenté dans CLAUDE.md). Corrigé en remplaçant
+ces deux montages par des **volumes Docker nommés** (`{{service_name}}-data`/
+`{{service_name}}-db-data`) plutôt que des bind mounts : un volume nommé est initialisé par
+Docker avec les bonnes permissions dès la première écriture du conteneur, éliminant la
+classe de bug entièrement plutôt que de documenter un `chown` à faire à la main à chaque
+déploiement. `addons_volume_path`/`config_volume_path` restent des bind mounts
+volontairement (l'opérateur doit pouvoir éditer les addons et `odoo.conf` directement sur
+l'hôte — même raisonnement que le montage de config de Caddy).
+
+Vérifié en direct à deux reprises (avant et après le correctif) : pile complète démarrée en
+local via `docker compose up` avec les valeurs rendues par `ppo template render Odoo
+<nom>`, logs Odoo confirmant la connexion Postgres réussie via les variables d'environnement
+`HOST`/`USER`/`PASSWORD`, `curl` depuis un conteneur tiers sur le même réseau confirmant un
+`200` sur `/web/login` (après redirection, normal sans base de données encore créée) une
+fois le correctif appliqué — `500` avant. `ppo check` et `ppo lss` confirmés après ajout à
+`services.yaml`. Pas de changement à `provision.rs`/`template.rs` : le template respecte le
+mécanisme existant tel quel.
+
+Non couvert par ce changement, comme documenté pour les autres templates : `ppo provision`
+ne gère pas les champs `db_credentials` (voir sa doc dans `provision.rs`) — un déploiement
+Odoo provisionné via `ppo provision` n'aura pas de sauvegarde configurée automatiquement,
+`cdep` reste la voie pour enregistrer les champs DB après coup si une sauvegarde est
+nécessaire.
+
 ## Phase 12 — TUI `[Claude, gros morceau]`
 
 Surcouche `ratatui` sur le socle CLI (le CLI reste la référence scriptable).

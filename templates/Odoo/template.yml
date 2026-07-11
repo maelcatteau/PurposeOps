@@ -1,0 +1,69 @@
+variables:
+  service_name:
+    level: 0
+    parent: ""
+    type: "string"
+    required: true
+    description: "Nom du service docker choisi pour le déploiement"
+    default_pattern: "{{host_id}}-{{customer_abbrev}}-odoo"
+
+  container_name:
+    level: 1
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "Container name"
+    example: "odoo-customer"
+    default_pattern: "{{service_name}}"
+
+  db_service_name:
+    level: 1
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "Nom du service/container Postgres associé"
+    example: "odoo-customer-db"
+
+  db_password:
+    level: 1
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "Mot de passe Postgres (partagé entre l'app et la base)"
+    example: "un-mot-de-passe-solide"
+
+  addons_volume_path:
+    level: 1
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "Chemin hôte pour les addons custom (monté sur /mnt/extra-addons) — bind mount volontaire, l'opérateur édite ces fichiers directement sur l'hôte"
+    example: "./custom-addons"
+
+  # Pas de variable pour /var/lib/odoo (filestore) ni /var/lib/postgresql/data : ce
+  # sont des volumes Docker NOMMÉS ({{service_name}}-data / {{service_name}}-db-data
+  # dans docker-compose.yml), pas des bind mounts. Trouvé en vérifiant ce template en
+  # direct (`docker compose up` réel, pas juste `docker compose config`) : l'image
+  # `odoo:18.0` tourne en UID 100/GID 101 (`odoo`), et un bind mount vers un dossier
+  # hôte fraîchement créé (appartenant à l'utilisateur courant) échoue avec
+  # `PermissionError: /var/lib/odoo/.local` — même classe de bug que l'incident
+  # filestore de la Phase 6 (voir CLAUDE.md). Un volume nommé est initialisé par
+  # Docker avec les bonnes permissions dès la première écriture du conteneur, ce qui
+  # évite complètement la classe de bug plutôt que de demander à chaque opérateur de
+  # faire un `chown 100:101` avant le premier démarrage.
+
+  config_volume_path:
+    level: 1
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "Chemin hôte contenant odoo.conf (monté sur /etc/odoo) — à préparer à l'avance sur l'hôte, ce template ne le génère pas"
+    example: "./odoo-conf"
+
+  network:
+    level: 2
+    parent: "service_name"
+    type: "string"
+    required: true
+    description: "The network used to link to the reverse proxy"
+    example: "caddy-network"

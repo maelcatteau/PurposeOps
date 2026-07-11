@@ -1,0 +1,47 @@
+services:
+  {{service_name}}:
+    image: odoo:18.0
+    container_name: "{{container_name}}"
+    restart: unless-stopped
+    depends_on:
+      {{db_service_name}}:
+        condition: service_started
+    environment:
+      HOST: "{{db_service_name}}"
+      USER: odoo
+      PASSWORD: "{{db_password}}"
+      ODOO_RC: /etc/odoo/odoo.conf
+    volumes:
+      - "{{addons_volume_path}}:/mnt/extra-addons"
+      - {{service_name}}-data:/var/lib/odoo
+      - "{{config_volume_path}}:/etc/odoo"
+    expose:
+      - "8069"
+      - "8072"
+    networks:
+      - {{network}}
+      - {{service_name}}-internal
+
+  {{db_service_name}}:
+    image: postgres:15
+    container_name: "{{db_service_name}}"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: "{{db_password}}"
+    volumes:
+      - {{service_name}}-db-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    networks:
+      - {{service_name}}-internal
+
+networks:
+  {{network}}:
+    external: true
+  {{service_name}}-internal:
+
+volumes:
+  {{service_name}}-data:
+  {{service_name}}-db-data:
