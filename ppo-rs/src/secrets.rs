@@ -12,9 +12,6 @@
 //! jusqu'à ce que l'une d'elles fonctionne — pas besoin de savoir à l'avance quelle clé a
 //! chiffré quoi.
 
-// Temporaire : câblé dans la couche config en 8.2/8.3. À retirer une fois utilisé.
-#![allow(dead_code)]
-
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -144,6 +141,19 @@ pub fn decrypt_secret(value: &str, identities: &[Identity]) -> Result<String> {
     let mut plaintext = vec![];
     reader.read_to_end(&mut plaintext)?;
     String::from_utf8(plaintext).context("contenu déchiffré non-UTF8")
+}
+
+/// Accesseur paresseux utilisé aux points d'usage réels d'un secret (backup, SSH...) :
+/// si `value` est chiffrée, la déchiffre avec les identités locales disponibles ; sinon
+/// la renvoie telle quelle (valeurs encore en clair, avant migration — voir 8.4). C'est
+/// ce point d'appel, pas `load_hosts`/`load_customers`, qui doit échouer si un secret
+/// est illisible : les commandes qui ne touchent pas ce champ ne doivent pas en pâtir.
+pub fn reveal(value: &str) -> Result<String> {
+    if !is_encrypted(value) {
+        return Ok(value.to_string());
+    }
+    let identities = load_all_local_identities()?;
+    decrypt_secret(value, &identities)
 }
 
 #[cfg(test)]

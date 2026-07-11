@@ -448,7 +448,7 @@ le schéma de clés est étendu pour rendre la config **auto-portable** :
       (I/O disque vers `~/.config/ppo/keys/`) pas testés unitairement — même convention
       que `config.rs` (I/O fichiers vérifié en live, pas en test, dans ce projet) ; câblés
       et vérifiés en live en 8.2/8.3/8.4. `cargo test` : 44/45 verts (1 `#[ignore]` réseau).
-- [ ] **8.2** `[Claude]` Intégration couche config : `Host.identity_key: Option<String>`
+- [x] **8.2** `[Claude]` Intégration couche config : `Host.identity_key: Option<String>`
       (repli sur `identity_file` si absent), `DbCredentials.password` déchiffré à la
       volée au chargement / rechiffré à l'écriture. Un champ chiffré dont aucune identité
       locale ne peut être déchiffrée ne doit pas casser les commandes qui ne l'utilisent
@@ -456,6 +456,31 @@ le schéma de clés est étendu pour rendre la config **auto-portable** :
       utilisé.
       *Fait quand* : round-trip préserve les champs chiffrés ; un déploiement dont la
       clé SSH/DB est illisible localement échoue clairement à l'usage, pas au chargement.
+
+      **Fait** : `Host.identity_key` ajouté (`config.rs`, `skip_serializing_if` comme les
+      autres champs optionnels). `secrets::reveal(&str) -> Result<String>` ajouté : passe
+      une valeur non chiffrée telle quelle (tolère le clair pas encore migré, 8.4), sinon
+      déchiffre avec les identités locales — c'est cet accesseur, appelé au point d'usage
+      réel, qui porte le "échoue seulement à l'usage", pas `load_hosts`/`load_customers`.
+      `cdep` chiffre désormais le mot de passe DB immédiatement à la clé du client
+      (généré si absent) avant de l'écrire dans `customers.yaml` ; `backup run`/`backup
+      restore` appellent `secrets::reveal` sur `db_credentials.password` avant de
+      construire la commande `pg_dump`/`psql`. Le champ `identity_key` lui-même n'est pas
+      encore consommé par `ssh.rs` — ça arrive en 8.3, en même temps que le mécanisme qui
+      le peuple pour la première fois (pas de sens à câbler la consommation d'un champ
+      toujours vide).
+
+      Vérifié en live sur un déploiement scratch (`EncTestCustomer` → conteneurs locaux
+      `odoo-demo`/`odoo-demo-db`, nettoyé après coup) : `cdep` a bien produit un
+      `db_credentials.password` préfixé `enc:` dans l'aperçu YAML **et** dans
+      `customers.yaml` ; clé générée à `~/.config/ppo/keys/EncTestCustomer.txt` en
+      `0600` ; `ppo backup run` a réussi de bout en bout (déchiffrement → `pg_dump`
+      authentifié avec succès) ; `ppo pdei`/`ppo lsc` continuent de fonctionner sans
+      toucher au déchiffrement (`pdei` affiche le blob chiffré tel quel). Déplacer le
+      fichier de clé fait échouer `backup run` avec une erreur claire (`aucune clé locale
+      ne peut déchiffrer cette valeur`) sans toucher `pdei`/`lsc` ; le remettre en place
+      restaure le fonctionnement normal. 2 tests unitaires ajoutés pour le round-trip du
+      champ `identity_key` (`config/tests.rs`) ; `cargo test` : 46/47 verts.
 - [ ] **8.3** `[Claude]` Calcul des destinataires : `cdep` (re)chiffre `identity_key` de
       l'hôte visé pour inclure la clé publique du client, en plus des clés déjà
       présentes ; génère la clé du client si elle n'existe pas encore.

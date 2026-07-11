@@ -48,6 +48,12 @@ pub struct Host {
     pub identity_file: String,
     pub arch: String,
     pub docker_context: String,
+    /// Clé SSH privée chiffrée (`enc:...`), embarquée dans la config pour la rendre
+    /// portable d'une machine à l'autre — voir Phase 8 dans PORTING.md. Chiffrée à
+    /// l'union des clients ayant un déploiement sur cet hôte. `identity_file` reste le
+    /// repli si absent (host pas encore migré, ou clé volontairement gérée hors config).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_key: Option<String>,
 }
 
 /// Dans le contexte, le client n'est stocké que par son abréviation

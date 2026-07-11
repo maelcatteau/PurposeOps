@@ -128,6 +128,7 @@ pub fn cmd_ch() -> Result<()> {
         identity_file,
         arch,
         docker_context: format!("remote-{host_name}"),
+        identity_key: None,
     };
 
     println!(

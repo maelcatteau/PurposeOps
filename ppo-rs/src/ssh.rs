@@ -197,6 +197,7 @@ fn host_from_socket_name(name: &str) -> Option<Host> {
         identity_file: String::new(),
         arch: String::new(),
         docker_context: String::new(),
+        identity_key: None,
     })
 }
 

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, anyhow, bail};
 
 use crate::config::{self, Customer, DbCredentials, Deployment, DeploymentField, DeploymentHost};
-use crate::{customer, host, table, ui};
+use crate::{customer, host, secrets, table, ui};
 
 /// Record du déploiement courant. Erreurs explicites : absent, ou ancien format string.
 pub fn get_current_deployment_info() -> Result<Deployment> {
@@ -235,6 +235,13 @@ pub fn cmd_cdep() -> Result<()> {
             return Ok(());
         };
 
+        // Chiffré immédiatement à la clé du client (génère sa clé si absente) : aucun
+        // mot de passe en clair n'atteint le disque pour un déploiement créé après la
+        // Phase 8. Voir PORTING.md.
+        let customer_identity = secrets::load_or_generate_customer_identity(&customer_name)?;
+        let encrypted_password =
+            secrets::encrypt_secret(&db_password, &[customer_identity.to_public()])?;
+
         new_deployment.container_name = Some(container_name);
         new_deployment.db_container_name = Some(db_container_name);
         new_deployment.database_name = Some(database_name);
@@ -242,7 +249,7 @@ pub fn cmd_cdep() -> Result<()> {
             host: db_host,
             port: db_port,
             user: db_user,
-            password: db_password,
+            password: encrypted_password,
         });
     }
 

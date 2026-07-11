@@ -19,10 +19,10 @@
 
 use std::process::{Command, Output};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context as _, Result, anyhow, bail};
 
 use crate::config::{self, Host};
-use crate::{customer, deployment, docker, ssh, ui};
+use crate::{customer, deployment, docker, secrets, ssh, ui};
 
 /// Le nu remplace en dur `~` par le home de l'utilisateur SSH distant (pas celui du
 /// laptop) : un `~/...` entre quotes simples dans une commande shell distante n'est de
@@ -146,6 +146,8 @@ pub fn cmd_backup_run(output_dir: Option<String>, cron: bool) -> Result<()> {
     let creds = dep.db_credentials.as_ref().ok_or_else(|| {
         anyhow!("❌ Credentials DB manquants. Ajoutez 'db_credentials' dans customers.yaml.")
     })?;
+    let db_password = secrets::reveal(&creds.password)
+        .context("déchiffrement du mot de passe DB")?;
 
     println!("✅ Credentials chargés : User={}, Host={}", creds.user, creds.host);
 
@@ -170,7 +172,7 @@ pub fn cmd_backup_run(output_dir: Option<String>, cron: bool) -> Result<()> {
         host,
         &creds.port,
         &creds.user,
-        &creds.password,
+        &db_password,
         &final_output_dir,
         cron,
     )
@@ -376,6 +378,8 @@ pub fn cmd_backup_restore(
     let creds = dep.db_credentials.as_ref().ok_or_else(|| {
         anyhow!("❌ Credentials DB manquants. Ajoutez 'db_credentials' dans customers.yaml.")
     })?;
+    let db_password = secrets::reveal(&creds.password)
+        .context("déchiffrement du mot de passe DB")?;
 
     let target_database = match target_database.filter(|d| !d.is_empty()) {
         Some(d) => d,
@@ -444,7 +448,7 @@ pub fn cmd_backup_restore(
         host,
         &creds.port,
         &creds.user,
-        &creds.password,
+        &db_password,
         &backup_path,
     )
 }

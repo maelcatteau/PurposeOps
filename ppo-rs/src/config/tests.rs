@@ -160,3 +160,32 @@ fn round_trip_preserve_les_champs() {
     assert_eq!(creds.password, "odoo_password_2025");
     assert_eq!(reparsed.host["mcm"].docker_context, "remote-vps-mcm");
 }
+
+#[test]
+fn identity_key_absent_donne_none_et_ne_reapparait_pas_au_dump() {
+    let ctx: Context = serde_yaml_ng::from_str(FULL_CONTEXT).unwrap();
+    assert!(ctx.host["mcm"].identity_key.is_none());
+
+    let dumped = serde_yaml_ng::to_string(&ctx).unwrap();
+    assert!(!dumped.contains("identity_key"));
+}
+
+#[test]
+fn identity_key_present_survit_au_round_trip() {
+    let yaml = "
+name: vps-mcm
+hostname: 46.202.131.25
+user: ngner
+port: '2222'
+identity_file: /etc/ssh/mcm
+arch: x86_64
+docker_context: remote-vps-mcm
+identity_key: enc:abcdefIsAgeCiphertext==
+";
+    let host: Host = serde_yaml_ng::from_str(yaml).unwrap();
+    assert_eq!(host.identity_key.as_deref(), Some("enc:abcdefIsAgeCiphertext=="));
+
+    let dumped = serde_yaml_ng::to_string(&host).unwrap();
+    let reparsed: Host = serde_yaml_ng::from_str(&dumped).unwrap();
+    assert_eq!(reparsed.identity_key.as_deref(), Some("enc:abcdefIsAgeCiphertext=="));
+}
