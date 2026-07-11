@@ -568,7 +568,7 @@ le schéma de clés est étendu pour rendre la config **auto-portable** :
       action délibérée, pas un effet de bord d'un test — en attente d'un accord explicite
       avant de l'exécuter pour de vrai.
 
-## Phase 9 — Provisioning end-to-end `[Claude]`
+## Phase 9 — Provisioning end-to-end `[Claude]` — ✅ fait
 
 Déployer un nouveau service en une commande. Réutilise SSH (3), Docker (4), CRUD (5).
 
@@ -611,10 +611,44 @@ Déployer un nouveau service en une commande. Réutilise SSH (3), Docker (4), CR
       établie via la relecture ligne à ligne de `templater.nu` (portée dans les tests
       unitaires avec sortie calculée à la main, pas devinée) plutôt que via cette
       comparaison croisée en direct. 9 tests unitaires purs, `cargo test` : 55/56 verts.
-- [ ] **9.2** `[Claude]` `ppor provision` : rendu → création du dossier distant (SSH) →
+- [x] **9.2** `[Claude]` `ppor provision` : rendu → création du dossier distant (SSH) →
       push du compose → `docker compose up -d` → enregistrement du déploiement dans
       `customers.yaml` (CRUD 5.3). Confirmation avant `up`.
       *Fait quand* : un service scratch déployé de bout en bout sur un VPS de test.
+
+      **Fait** : `src/provision.rs`, `ppo provision`. Capacité entièrement nouvelle, sans
+      équivalent nu même partiel (voir l'exploration en tête de fichier : `templater.nu`
+      rend en local sans jamais rien pousser, `docker-compose-functions.nu` ne pilote que
+      des piles déjà connues de `docker ps -a`, `deployment-manager/core.nu` enregistre
+      des métadonnées sans toucher SSH/Docker — aucun des trois n'est câblé aux autres).
+      Aucun mécanisme de transfert de fichier n'existe non plus dans le projet (pas de
+      `scp`/`rsync`) : le compose rendu est encodé en base64 et écrit via une commande
+      shell sur la connexion ControlMaster déjà en place (`echo '<b64>' | base64 -d >
+      'chemin'`) plutôt que d'ouvrir une connexion de transfert séparée — cohérent avec
+      le choix déjà fait en Phase 3 de tout faire passer par le socket multiplexé
+      partagé. Une seule confirmation, couvrant tout (mkdir, envoi, `up`) — pas de
+      deuxième confirmation juste avant `up` séparément. Pas de gestion des champs DB :
+      les services actuellement templatés (Vaultwarden, Caddy) n'en ont pas ; `cdep`
+      reste la voie pour un déploiement avec base de données. Réutilise
+      `deployment::ensure_host_key_encrypted` (8.3) et `deployment_id_exists` (5.3,
+      rendue `pub(crate)`) plutôt que de dupliquer cette logique.
+
+      Vérifié en live sur un **VPS réel** (`ngner`, choisi précisément parce que
+      `localhost` contournerait entièrement SSH et ne testerait pas le nouveau chemin de
+      transfert de fichier) : client scratch `ProvisionTest` lié à `ngner`, template
+      Vaultwarden rendu et provisionné sous le nom `ppo-provision-test` sur le réseau
+      Docker externe déjà existant `caddy-network`. Après coup, vérifié sur l'hôte
+      lui-même : conteneur réellement démarré (`docker ps` distant), fichier
+      `docker-compose.yml` poussé **octet-identique** au rendu local (aucune corruption
+      via l'aller-retour base64), `identity_key` de `ngner` correctement rechiffré pour
+      les 3 clients y ayant désormais un déploiement (Cocotte, ProvisionTest, Sylvie).
+      Nettoyage complet ensuite : `docker compose down` + suppression du répertoire
+      distant (nécessitant un conteneur `alpine` root éphémère, les fichiers de données
+      Vaultwarden appartenant à un UID différent de l'utilisateur SSH — même gotcha déjà
+      documenté dans CLAUDE.md pour `docker cp`), `dc` du client scratch,
+      `hosts.yaml`/`customers.yaml`/`context.yaml` restaurés à l'identique.
+      `tests/integration_workflow.py` relancé après coup (aucune régression) suite aux
+      changements de visibilité dans `deployment.rs`.
 
 ## Phase 10 — Vue de flotte / health `[Claude]`
 

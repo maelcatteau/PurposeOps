@@ -153,7 +153,8 @@ pub fn cmd_sd(deployment_id: Option<String>) -> Result<()> {
 
 /// Un `deployment_id` doit être unique **globalement** (tous clients confondus) —
 /// `host_for_deployment` et les autres lookups cherchent par id sans préciser de client.
-fn deployment_id_exists(deployment_id: &str, customers: &BTreeMap<String, Customer>) -> bool {
+/// Réutilisée par `provision::cmd_provision` (Phase 9), même contrainte qu'à la création.
+pub(crate) fn deployment_id_exists(deployment_id: &str, customers: &BTreeMap<String, Customer>) -> bool {
     customers
         .values()
         .any(|c| c.deployments.iter().any(|d| d.deployment_id == deployment_id))

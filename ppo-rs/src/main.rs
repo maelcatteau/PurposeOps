@@ -11,6 +11,7 @@ mod deployment;
 mod docker;
 mod host;
 mod prompt;
+mod provision;
 mod secrets;
 mod service;
 mod ssh;
@@ -153,6 +154,10 @@ enum Command {
     /// Rendu de templates docker-compose (Phase 9, port de `templater.nu`).
     #[command(subcommand)]
     Template(TemplateCommand),
+
+    /// Déploie un nouveau service de bout en bout (wizard). Capacité nouvelle, aucun
+    /// équivalent côté nu.
+    Provision,
 }
 
 #[derive(Subcommand)]
@@ -273,6 +278,8 @@ fn main() -> anyhow::Result<()> {
                 None => println!("❌ Rendu annulé"),
             }
         }
+
+        Command::Provision => provision::cmd_provision()?,
     }
     Ok(())
 }
