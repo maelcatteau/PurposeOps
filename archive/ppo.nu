@@ -63,7 +63,7 @@ export def "ppos" [query?: string] {
         print $"🚀 Executing: ($command)"
         
         # Exécuter directement la commande
-        let ppo_file = "~/dev/nu-modules/PurposeOps/ppo.nu"
+        let ppo_file = "~/dev/nu-modules/PurposeOps/archive/ppo.nu"
         nu -c $"overlay use ($ppo_file); ($command)"
     }
 }

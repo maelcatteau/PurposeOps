@@ -7,11 +7,11 @@ Kubernetes cluster.
 
 ## Status
 
-PurposeOps started as a Nushell module and has since been rewritten in Rust (`ppo-rs/`,
-binary `ppo`). The rewrite is feature-complete and is the daily driver: it's installed
-via `cargo install`, the shell no longer loads the nu module, and the Starship prompt
-hook calls the Rust binary directly. The original nu module still lives in the repo as a
-reference but isn't loaded anymore.
+PurposeOps started as a Nushell module and has since been rewritten in Rust (binary
+`ppo`, the crate at the repo root). The rewrite is feature-complete and is the daily
+driver: it's installed via `cargo install`, the shell no longer loads the nu module, and
+the Starship prompt hook calls the Rust binary directly. The original nu module still
+lives in the repo under [`archive/`](archive/) as a reference but isn't loaded anymore.
 
 - [`PORTING.md`](PORTING.md) — the full phase-by-phase build/verification log (in French).
   Read this for *why* something works the way it does, or what was checked before it
@@ -22,7 +22,6 @@ reference but isn't loaded anymore.
 ## Install
 
 ```sh
-cd ppo-rs
 cargo install --path .
 ```
 
@@ -135,7 +134,7 @@ Full `--help` (including flags) is always the source of truth: `ppo --help`, `pp
 
 ## Development
 
-From `ppo-rs/`:
+From the repo root:
 
 ```sh
 cargo build             # or cargo check for a quick syntax pass

@@ -19,9 +19,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ppo-rs
     steps:
       - uses: actions/checkout@v7
 
@@ -30,8 +27,6 @@ jobs:
           components: clippy
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ppo-rs
 
       - name: cargo build
         run: cargo build --verbose

@@ -759,6 +759,41 @@ module de bootstrap qui installe Netdata (et les autres logiciels de base) sur u
       VM, confirmant qu'aucune capacité n'est réinstallée → `dh`. `hosts.yaml`/
       `context.yaml` restaurés à l'identique après coup, comme `integration_workflow.py`.
 
+## Réorganisation du dépôt : Rust à la racine, module nu archivé
+
+Faite juste avant de fusionner la branche `rust` dans `master`. Motivation concrète : les
+statistiques « Languages » de GitHub reflètent l'arbre de la branche **par défaut**
+(`master`), pas de la branche courante — tout le travail Rust ayant vécu sur `rust` sans
+jamais être fusionné, `master` ne montrait toujours que le nu, d'où le 100% Nushell affiché
+sur la page du dépôt malgré des mois de portage. La fusion à elle seule aurait réglé
+l'affichage ; réorganiser l'arborescence en même temps aligne aussi la structure du dépôt
+avec ce qui est réellement le projet actif.
+
+- Contenu de `ppo-rs/` (`Cargo.toml`, `Cargo.lock`, `src/`, `tests/`) remonté à la racine du
+  dépôt via `git mv` (historique de fichier préservé). `ppo-rs/` supprimé.
+- Code nu (`ppo.nu`, `config/`, `context/`, `customer-manager/`, `deployment-manager/`,
+  `docker/`, `docker-compose-functions.nu`, `machine-manager/`, `service-manager.nu`,
+  `ssh-manager.nu`, `templater.nu`) déplacé sous `archive/` via `git mv`. Une seule
+  référence à un chemin absolu à corriger après coup : `ppo.nu`'s `ppos` (palette fzf)
+  recharge le module par chemin en dur pour l'exécution directe d'une commande —
+  `~/dev/nu-modules/PurposeOps/ppo.nu` → `~/dev/nu-modules/PurposeOps/archive/ppo.nu`.
+  Aucune autre référence de chemin absolu trouvée dans les fichiers nu (vérifié par grep
+  avant le déplacement) : tous les `use` inter-fichiers sont relatifs, donc intacts
+  puisque l'arborescence entière a été déplacée en bloc.
+- `PurposeOps-config/` (submodule) et `templates/` **ne bougent pas** : `templates/` est
+  lue par `template.rs` via `config::base_path()` (un chemin absolu fixe côté `$HOME`,
+  indépendant de l'emplacement du code dans le dépôt), donc partagée entre le binaire Rust
+  et l'ancien module nu, pas seulement de la donnée nu.
+- `.gitignore`, `.github/workflows/ci.yml` (plus de `working-directory: ppo-rs`),
+  `README.md` et `CLAUDE.md` mis à jour pour les nouveaux chemins. Entrées `config/*.yaml`
+  historiquement mortes dans `.gitignore` (déjà signalées comme telles dans `CLAUDE.md`)
+  supprimées à cette occasion, `config/` n'existant même plus à cet endroit.
+- Aucun changement de comportement à l'exécution : les chemins codés en dur dans le
+  binaire (`config::base_path()`, `controlmasters/`, la clé SSH matérialisée sous
+  `~/.cache/ppo/keys/`) sont ancrés sur `$HOME`, pas sur l'emplacement de `Cargo.toml`
+  dans le dépôt — aucune modification de `src/` nécessaire pour ce déplacement.
+  Revérifié après coup : `cargo build`/`cargo test`/`cargo clippy` verts depuis la racine.
+
 ## Phase 11 — Backups automatisés `[Claude, relu par toi]`
 
 Réutilise le backup (6) + secrets (8).
