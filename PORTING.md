@@ -402,9 +402,19 @@ patterns rodés.
       (79 `export extern`, zéro référence résiduelle à `ppor`). Prompt Starship
       vérifié rendu correctement via le nouveau binaire installé. Config PurposeOps
       (`hosts.yaml`/`customers.yaml`/`context.yaml`) non touchée par cette phase.
-- [ ] **7.2** Après quelques semaines sans retour arrière : archiver le code nu
+- [x] **7.2** Après quelques semaines sans retour arrière : archiver le code nu
       (tag git), mettre à jour CLAUDE.md. **À partir d'ici la coexistence est finie** :
       Rust est seul à lire/écrire les YAML → le chiffrement (Phase 8) devient possible.
+
+      **Fait**, mais pas de la façon prévue ici : l'archivage a fini par arriver via la
+      "Réorganisation du dépôt" (voir plus bas), déclenchée pour une tout autre raison
+      dans l'immédiat (corriger l'affichage "Languages" de GitHub, resté à 100% Nushell
+      tant que le travail Rust vivait uniquement sur la branche `rust`) plutôt qu'après
+      "quelques semaines sans retour arrière" comme prévu ici — `archive/ppo.nu` et le
+      reste du module nu y sont déplacés, `CLAUDE.md` mis à jour en conséquence. Seul le
+      tag git manquait ; ajouté après coup : `pre-archive-nu-module`, sur `942a50c`
+      (dernier commit avant `dc59a7f`, la restructuration elle-même) — le dernier point
+      où le code nu vivait encore non archivé à la racine du dépôt.
 
 ---
 
