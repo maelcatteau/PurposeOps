@@ -18,7 +18,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 /// Racine du repo, dérivée de $HOME comme le fait `config.nu` (`~/dev/nu-modules/PurposeOps`).
-fn base_path() -> PathBuf {
+pub(crate) fn base_path() -> PathBuf {
     let home = std::env::var("HOME").expect("$HOME non défini");
     PathBuf::from(home).join("dev/nu-modules/PurposeOps")
 }

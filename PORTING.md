@@ -572,9 +572,45 @@ le schéma de clés est étendu pour rendre la config **auto-portable** :
 
 Déployer un nouveau service en une commande. Réutilise SSH (3), Docker (4), CRUD (5).
 
-- [ ] **9.1** `[Claude]` Port du `templater` : rendu d'un template (`templates/<Service>/`)
+- [x] **9.1** `[Claude]` Port du `templater` : rendu d'un template (`templates/<Service>/`)
       avec substitution de variables → `compose.yaml` local.
       *Fait quand* : compose rendu identique à celui du templater nu (Vaultwarden).
+
+      **Fait** : `src/template.rs` (`generate_compose`, exposée en CLI via `ppo template
+      render <service> <docker_service_name>`, équivalent du `g dc` nu — inexistant côté
+      nu comme sous-commande de `ppo`). Séparation pure/impure comme `prompt.rs`
+      (`format_prompt`/`get_prompt_context`) : `substitute`/`expand_networks`/
+      `format_example` sont pures et testées unitairement, `generate_compose` orchestre
+      la lecture disque + les prompts. Comportements du nu reproduits fidèlement, y
+      compris deux qui ont l'air de bugs mais n'en sont pas puisqu'il s'agit de parité :
+      `service_name`/`container_name` sont **toujours** dérivés de `docker_service_name`,
+      jamais saisis, même quand `template.yml` déclare sa propre description/exemple
+      pour `container_name` (cas réel de Vaultwarden) ; les champs `parent`/`type`/
+      `required`/`validation`/`default_pattern` du schéma YAML existent mais ne sont
+      jamais lus par `generate-compose` côté nu, donc pas repris non plus.
+
+      **Bug réel trouvé et corrigé avant tout test live** : la première version utilisait
+      une `BTreeMap` pour les variables, triée alphabétiquement par clé — cassant l'ordre
+      de saisie pour les variables de même `level` (ex. `templates/Caddy/template.yml` :
+      `http_port`/`https_port`/`admin_port` sont toutes `level: 2` ; nu les demande dans
+      l'ordre du fichier grâce à un tri stable, `BTreeMap` les aurait redemandées dans
+      l'ordre alphabétique des clés). Corrigé en remplaçant `BTreeMap` par
+      `serde_yaml_ng::Mapping` (adossée à `IndexMap`, préserve l'ordre du fichier) +
+      `Vec::sort_by_key` (stable) sur `level` — trouvé en écrivant le test de rendu Caddy
+      avant de le lancer en live, pas après.
+
+      Vérifié en live contre les templates réels du dépôt (`ppo template render`, piloté
+      par `pexpect`) : Vaultwarden rendu correctement (`container_name` bien ignoré au
+      profit de `docker_service_name`) ; Caddy rendu avec le bon ordre de prompts
+      (`http_port → https_port → admin_port → config_volume_path → admin_bind →
+      networks`, confirmant la correction ci-dessus) et la bonne expansion multi-réseaux.
+      Tentative de comparaison croisée automatisée avec `templater.nu` via `pexpect`
+      abandonnée : la session nu interactive reste bloquée dans ce pty (`reedline`
+      envoie une requête de position curseur `ESC[6n` à laquelle ce terminal ne répond
+      jamais) — limitation d'émulation de terminal, pas un doute sur le code. Confiance
+      établie via la relecture ligne à ligne de `templater.nu` (portée dans les tests
+      unitaires avec sortie calculée à la main, pas devinée) plutôt que via cette
+      comparaison croisée en direct. 9 tests unitaires purs, `cargo test` : 55/56 verts.
 - [ ] **9.2** `[Claude]` `ppor provision` : rendu → création du dossier distant (SSH) →
       push du compose → `docker compose up -d` → enregistrement du déploiement dans
       `customers.yaml` (CRUD 5.3). Confirmation avant `up`.

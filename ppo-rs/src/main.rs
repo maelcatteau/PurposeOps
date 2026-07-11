@@ -15,6 +15,7 @@ mod secrets;
 mod service;
 mod ssh;
 mod table;
+mod template;
 mod ui;
 
 use std::io;
@@ -148,6 +149,10 @@ enum Command {
     /// Chiffrement des secrets au repos (Phase 8, voir PORTING.md).
     #[command(subcommand)]
     Secrets(SecretsCommand),
+
+    /// Rendu de templates docker-compose (Phase 9, port de `templater.nu`).
+    #[command(subcommand)]
+    Template(TemplateCommand),
 }
 
 #[derive(Subcommand)]
@@ -155,6 +160,17 @@ enum SecretsCommand {
     /// Chiffre tous les secrets encore en clair dans la config (mots de passe DB, clés
     /// SSH d'hôte) — migration à lancer une fois puis après tout ajout manuel de secret.
     Encrypt,
+}
+
+#[derive(Subcommand)]
+enum TemplateCommand {
+    /// Rend un template en compose (imprimé sur stdout) sans rien déployer.
+    Render {
+        /// Nom du template (clé de services.yaml, ex. "Vaultwarden").
+        service_name: String,
+        /// Nom de service Docker propre à cette instance (ex. "vw-cocotte").
+        docker_service_name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -250,6 +266,13 @@ fn main() -> anyhow::Result<()> {
         Command::Completions { shell } => print_completions(shell),
 
         Command::Secrets(SecretsCommand::Encrypt) => secrets::cmd_secrets_encrypt()?,
+
+        Command::Template(TemplateCommand::Render { service_name, docker_service_name }) => {
+            match template::generate_compose(&service_name, &docker_service_name)? {
+                Some(compose) => print!("{compose}"),
+                None => println!("❌ Rendu annulé"),
+            }
+        }
     }
     Ok(())
 }
