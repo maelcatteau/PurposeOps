@@ -25,24 +25,36 @@ shell.
 
 ## Rust port (`ppo-rs/`)
 
-A progressive Rust rewrite lives in `ppo-rs/` (branch `rust`, full step-by-step plan in
-`PORTING.md`). The binary is named `ppor` during the migration and coexists with the nu module by
-reading/writing the **same** `PurposeOps-config/` YAML files — so both tools must round-trip the YAML
-faithfully (ports stay `String`, unknown fields must not be dropped). The nu prompt hook in
-`~/.config/starship.toml` already points at the release binary (`ppor prompt`).
+The Rust rewrite of PurposeOps lives in `ppo-rs/` (branch `rust`, full step-by-step plan and
+per-phase verification log in `PORTING.md`). The binary is `ppo`, installed via `cargo install
+--path .` to `~/.cargo/bin/ppo` — it's the daily driver now (cutover done in Phase 7); the nu
+module still exists in the repo as a reference/fallback but is no longer loaded by
+`~/.config/nushell/config.nu`. `~/.config/starship.toml`'s `[custom.ppo_context]` calls
+`~/.cargo/bin/ppo prompt` directly.
 
 - **Build / test / run**: from `ppo-rs/`, `cargo build` · `cargo test` · `cargo run -- <cmd>`.
-  Syntax-check equivalent for a single file is `cargo check`.
+  Syntax-check equivalent for a single file is `cargo check`. After installing a new build,
+  `cargo install --path .` again to update `~/.cargo/bin/ppo`.
 - **Tests go in separate files — never inline `#[cfg(test)] mod tests { … }` blocks in a source
   file.** Each module `src/<mod>.rs` declares `#[cfg(test)] mod tests;` at the bottom, and the tests
   live in the sibling file `src/<mod>/tests.rs` (with `use super::*;` to reach private items). A file
   module `foo.rs` may coexist with a `foo/` directory for its submodules (2018+ edition) — that's how
   `config.rs` + `config/tests.rs` and `prompt.rs` + `prompt/tests.rs` are laid out.
-- **Progress: Phases 1–4 done, not yet committed on branch `rust`** (prompt binary, config layer +
-  read/select commands, SSH ControlMaster, Docker — see `PORTING.md` for what was verified).
-  Phase 5 (CRUD config: `cc`/`ch`/`cs`/`cdep`) is next.
-- Same as the nu side: `cargo test` covers only pure logic (quoting, YAML round-trips, prompt
-  formatting). Anything touching a remote host is verified **live** against real infra.
+- **Progress: Phases 1–8 done** (prompt, config CRUD, SSH ControlMaster, Docker, backup/restore,
+  shell completions, the cutover, and secrets-at-rest encryption — see `PORTING.md` for what was
+  verified at each step). Phases 9–12 (provisioning, fleet view, automated backups, TUI) are
+  independent, unstarted, and can be tackled in any order.
+- `cargo test` covers only pure logic (quoting, YAML round-trips, prompt formatting, `age`
+  encrypt/decrypt). Anything touching a remote host, Docker, or an interactive `inquire` prompt is
+  verified **live** against real infra — this project has no CI and no automated live-infra suite
+  beyond the one script below.
+- **`ppo-rs/tests/integration_workflow.py`**: a `pexpect`-driven live integration test covering the
+  full lifecycle — create host/customer/deployment, `backup run`, simulate data loss, `backup
+  restore`, verify, then delete everything. Not a `cargo test` target (interactive wizards need a
+  real PTY); run directly with `python3 tests/integration_workflow.py`. Requires the local
+  `odoo-demo`/`odoo-demo-db` Docker containers running (see `~/dev/demo-odoo/docker-compose.yml`).
+  Snapshots and restores `PurposeOps-config/*.yaml` around itself and cleans up scratch objects
+  even on failure — safe to run against the real config.
 
 ## Architecture
 
