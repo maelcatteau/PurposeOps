@@ -11,6 +11,7 @@ mod deployment;
 mod docker;
 mod host;
 mod prompt;
+mod secrets;
 mod service;
 mod ssh;
 mod table;

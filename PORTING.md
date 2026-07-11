@@ -428,12 +428,26 @@ le schéma de clés est étendu pour rendre la config **auto-portable** :
   recomputation de l'ensemble de destinataires **à la création** d'un lien
   client↔hôte (`cdep`). Rotation manuelle si un jour nécessaire, hors scope pour l'instant.
 
-- [ ] **8.1** `[Claude]` Mécanisme de clé + crate `age` : génération/chargement d'identités
+- [x] **8.1** `[Claude]` Mécanisme de clé + crate `age` : génération/chargement d'identités
       par client (`~/.config/ppo/keys/<client>.txt`, chmod 600), `encrypt_secret`
       (multi-destinataires) / `decrypt_secret` (essaie chaque identité locale) avec
       marqueur `enc:` pour distinguer clair/chiffré. Testées unitairement.
       *Fait quand* : `cargo test` prouve chiffrer→déchiffrer = identité pour un seul
       destinataire **et** pour plusieurs (n'importe laquelle des identités déchiffre).
+
+      **Fait** : `src/secrets.rs`. API `age` "full" (`Encryptor::with_recipients` +
+      `Decryptor::decrypt`, pas le raccourci `age::encrypt`/`decrypt` qui n'accepte qu'un
+      seul destinataire/identité) — utilisée uniformément même pour le cas à un seul
+      destinataire, pour garder `encrypt_secret`/`decrypt_secret` génériques sur le nombre
+      de destinataires. Ciphertext encodé en base64 (pas le format "armor" `age`, pensé
+      pour des fichiers `.age` autonomes, pas pour être imbriqué dans une valeur YAML).
+      7 tests unitaires purs : round-trip à un et plusieurs destinataires (chaque identité
+      déchiffre indépendamment), une identité non-destinataire échoue, aucune identité
+      locale donne une erreur explicite plutôt qu'un échec silencieux, valeur non
+      préfixée `enc:` rejetée, chiffrement sans destinataire refusé. `load_*`/`save_*`
+      (I/O disque vers `~/.config/ppo/keys/`) pas testés unitairement — même convention
+      que `config.rs` (I/O fichiers vérifié en live, pas en test, dans ce projet) ; câblés
+      et vérifiés en live en 8.2/8.3/8.4. `cargo test` : 44/45 verts (1 `#[ignore]` réseau).
 - [ ] **8.2** `[Claude]` Intégration couche config : `Host.identity_key: Option<String>`
       (repli sur `identity_file` si absent), `DbCredentials.password` déchiffré à la
       volée au chargement / rechiffré à l'écriture. Un champ chiffré dont aucune identité
