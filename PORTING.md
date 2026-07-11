@@ -525,6 +525,36 @@ le schéma de clés est étendu pour rendre la config **auto-portable** :
       fichier de clé d'un client fait échouer exactement (et seulement) ce qui dépend de
       lui (preuve que le cloisonnement par client fonctionne réellement).
 
+      **Commande écrite et vérifiée, migration réelle pas encore lancée.**
+      `cmd_secrets_encrypt` (`secrets.rs`) : parcourt tous les déploiements de
+      `customers.yaml`, chiffre chaque `db_credentials.password` encore en clair (clé du
+      client propriétaire, générée si besoin) ; parcourt tous les hôtes de `hosts.yaml`
+      et réutilise `ensure_host_key_encrypted` (8.3) pour chacun — pas de code dupliqué
+      entre le déclenchement automatique par `cdep` et cette passe de rattrapage
+      manuelle. `ppo secrets encrypt` exposé en sous-commande (`Command::Secrets`, comme
+      `Command::Backup`).
+
+      Vérifié **en isolation** (les chemins de `config.rs` sont codés en dur, donc
+      impossible de pointer la commande vers une config de test séparée) : hôte scratch
+      `migtest` (fichier de clé jetable, contenu arbitraire) + client scratch
+      `MigrationTest` avec un mot de passe **injecté directement en clair** dans
+      `customers.yaml` (contournement délibéré de `cdep`, pour simuler des données
+      pré-Phase-8 jamais passées par le chiffrement automatique). En lançant
+      `ppo secrets encrypt` sur la config réelle, la commande a correctement trouvé et
+      chiffré **les 3** mots de passe encore en clair qui existaient à ce moment
+      (Mael, Sylvie, et le scratch injecté) et **3** clés d'hôte (`mcm`, `ngner`,
+      `migtest`), avec les bons ensembles de destinataires (`ngner` → Cocotte *et*
+      Sylvie, tous deux avec un déploiement dessus ; Cocotte incluse alors qu'elle n'a
+      aucun mot de passe DB — cohérent, la clé SSH d'hôte suit les déploiements, pas les
+      mots de passe). Comme la commande n'a pas de mode isolé, ce test a chiffré pour de
+      vrai les secrets réels de Mael et Sylvie comme effet de bord non voulu de la
+      vérification — **annulé aussitôt** (`hosts.yaml`/`customers.yaml` restaurés à
+      l'identique depuis une sauvegarde prise avant le test, `~/.config/ppo/keys/` vidé).
+      La commande est donc prouvée correcte mais volontairement pas encore lancée pour
+      de bon sur la config réelle : chiffrer les vrais secrets de production est une
+      action délibérée, pas un effet de bord d'un test — en attente d'un accord explicite
+      avant de l'exécuter pour de vrai.
+
 ## Phase 9 — Provisioning end-to-end `[Claude]`
 
 Déployer un nouveau service en une commande. Réutilise SSH (3), Docker (4), CRUD (5).

@@ -22,6 +22,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
+use crate::{config, deployment};
+
 /// Préfixe qui distingue une valeur chiffrée d'une valeur en clair dans le YAML.
 pub const MARKER: &str = "enc:";
 
@@ -154,6 +156,69 @@ pub fn reveal(value: &str) -> Result<String> {
     }
     let identities = load_all_local_identities()?;
     decrypt_secret(value, &identities)
+}
+
+/// `secrets encrypt` — migration en place de la config réelle : chiffre tout
+/// `db_credentials.password` encore en clair (à la clé du client propriétaire du
+/// déploiement, générée si besoin) et (ré)chiffre `identity_key` pour chaque hôte
+/// (réutilise `ensure_host_key_encrypted`, la même logique déjà exercée par `cdep`).
+/// Idempotent au sens du contenu déchiffrable (les valeurs déjà chiffrées ne sont pas
+/// touchées) ; réexécuter la commande ne fait que rattraper ce qui reste en clair.
+pub fn cmd_secrets_encrypt() -> Result<()> {
+    let mut customers = config::load_customers()?;
+    let mut hosts = config::load_hosts()?;
+
+    let mut password_count = 0;
+    let mut customers_changed = false;
+
+    for (customer_name, cust) in customers.iter_mut() {
+        for dep in cust.deployments.iter_mut() {
+            let Some(creds) = dep.db_credentials.as_mut() else {
+                continue;
+            };
+            if is_encrypted(&creds.password) {
+                continue;
+            }
+            let identity = load_or_generate_customer_identity(customer_name)?;
+            match encrypt_secret(&creds.password, &[identity.to_public()]) {
+                Ok(enc) => {
+                    creds.password = enc;
+                    password_count += 1;
+                    customers_changed = true;
+                }
+                Err(e) => println!(
+                    "⚠️  Échec du chiffrement du mot de passe DB de '{customer_name}'/'{}' : {e}",
+                    dep.deployment_id
+                ),
+            }
+        }
+    }
+
+    let mut host_count = 0;
+    let mut hosts_changed = false;
+    let host_ids: Vec<String> = hosts.keys().cloned().collect();
+    for host_id in host_ids {
+        if deployment::ensure_host_key_encrypted(&host_id, &mut hosts, &customers) {
+            host_count += 1;
+            hosts_changed = true;
+        }
+    }
+
+    if customers_changed {
+        config::save_yaml_map(&config::customers_config_path(), &customers)?;
+    }
+    if hosts_changed {
+        config::save_yaml_map(&config::hosts_config_path(), &hosts)?;
+    }
+
+    if password_count == 0 && host_count == 0 {
+        println!("ℹ️  Rien à chiffrer, tout est déjà à jour.");
+    } else {
+        println!(
+            "✅ {password_count} mot(s) de passe DB chiffré(s), {host_count} clé(s) SSH d'hôte chiffrée(s)/mise(s) à jour."
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]

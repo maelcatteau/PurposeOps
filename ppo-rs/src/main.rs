@@ -141,6 +141,17 @@ enum Command {
 
     /// Génère un script de complétion shell (à sourcer) — remplace la palette `ppos`.
     Completions { shell: CompletionShell },
+
+    /// Chiffrement des secrets au repos (Phase 8, voir PORTING.md).
+    #[command(subcommand)]
+    Secrets(SecretsCommand),
+}
+
+#[derive(Subcommand)]
+enum SecretsCommand {
+    /// Chiffre tous les secrets encore en clair dans la config (mots de passe DB, clés
+    /// SSH d'hôte) — migration à lancer une fois puis après tout ajout manuel de secret.
+    Encrypt,
 }
 
 #[derive(Subcommand)]
@@ -233,6 +244,8 @@ fn main() -> anyhow::Result<()> {
         }
 
         Command::Completions { shell } => print_completions(shell),
+
+        Command::Secrets(SecretsCommand::Encrypt) => secrets::cmd_secrets_encrypt()?,
     }
     Ok(())
 }

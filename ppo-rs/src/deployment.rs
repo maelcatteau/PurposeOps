@@ -161,12 +161,13 @@ fn deployment_id_exists(deployment_id: &str, customers: &BTreeMap<String, Custom
 
 /// (Re)chiffre `identity_key` de `host_id` pour l'union des clients ayant désormais un
 /// déploiement dessus (`customers` doit déjà refléter le nouveau déploiement). Best-effort
-/// et jamais fatal pour `cdep` : un hôte sans `identity_file` lisible localement (ex :
-/// `localhost`, ou `cdep` lancé sur une machine qui n'a pas cette clé) est ignoré
-/// silencieusement, un `identity_key` déjà présent mais indéchiffrable avec les identités
-/// locales disponibles se contente d'un avertissement. Retourne `true` si `hosts` a été
-/// modifié (à sauvegarder par l'appelant).
-fn ensure_host_key_encrypted(
+/// et jamais fatal pour l'appelant : un hôte sans `identity_file` lisible localement (ex :
+/// `localhost`, ou lancé sur une machine qui n'a pas cette clé) est ignoré silencieusement,
+/// un `identity_key` déjà présent mais indéchiffrable avec les identités locales
+/// disponibles se contente d'un avertissement. Retourne `true` si `hosts` a été modifié
+/// (à sauvegarder par l'appelant). Aussi réutilisée par `secrets::cmd_secrets_encrypt`
+/// (migration 8.4) pour chaque hôte de la config, pas seulement celui d'un `cdep`.
+pub(crate) fn ensure_host_key_encrypted(
     host_id: &str,
     hosts: &mut BTreeMap<String, config::Host>,
     customers: &BTreeMap<String, Customer>,
