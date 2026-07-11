@@ -357,3 +357,73 @@ pub fn cmd_cdep() -> Result<()> {
     println!("✅ Déploiement '{deployment_id}' créé pour '{customer_name}'");
     Ok(())
 }
+
+/// `ddep` (delete deployment) — supprime un déploiement du client courant (sélection
+/// fuzzy ou id direct, aperçu YAML, confirmation). N'existe côté nu ni ailleurs : capacité
+/// nouvelle, `deployment-manager/mod.nu` n'a jamais exposé de suppression. Alias `ddep`
+/// (pas `dd`) pour la même raison que `cdep` n'est pas `cd` : éviter toute collision avec
+/// un utilitaire shell existant (`dd`, la copie bas niveau, autrement plus dangereuse à
+/// masquer que `cd`).
+pub fn cmd_ddep(deployment_id: Option<String>) -> Result<()> {
+    let (customer_name, _) = customer::get_current_customer()?
+        .ok_or_else(|| anyhow!("Aucun client sélectionné. Utilisez 'sc <client>' d'abord."))?;
+
+    let mut customers = config::load_customers()?;
+    let cust = customers
+        .get(&customer_name)
+        .ok_or_else(|| anyhow!("Client '{customer_name}' introuvable"))?;
+
+    let available: Vec<String> = cust.deployments.iter().map(|d| d.deployment_id.clone()).collect();
+    if available.is_empty() {
+        println!("(aucun déploiement pour ce client)");
+        return Ok(());
+    }
+
+    let selected = match deployment_id {
+        Some(id) => {
+            if !available.contains(&id) {
+                bail!("Déploiement '{id}' introuvable pour le client '{customer_name}'");
+            }
+            id
+        }
+        None => match ui::select("Select deployment to delete:", available) {
+            Some(s) => s,
+            None => return Ok(()),
+        },
+    };
+
+    let dep = cust
+        .deployments
+        .iter()
+        .find(|d| d.deployment_id == selected)
+        .expect("sélectionné dans la liste ci-dessus");
+
+    println!("Do you want to delete this deployment:");
+    println!("ID: {selected}");
+    println!("Configuration: {}", serde_yaml_ng::to_string(dep)?);
+
+    if !ui::confirm("Delete?") {
+        println!("❌ Operation cancelled");
+        return Ok(());
+    }
+
+    let cust = customers
+        .get_mut(&customer_name)
+        .expect("vérifié au-dessus");
+    cust.deployments.retain(|d| d.deployment_id != selected);
+    config::save_yaml_map(&config::customers_config_path(), &customers)?;
+
+    // Le contexte garde le RECORD COMPLET du déploiement sélectionné (pas juste son id) :
+    // si celui qu'on vient de supprimer est le déploiement courant, on le désélectionne
+    // pour ne pas laisser une référence pendante que `pdei`/`backup` liraient encore.
+    let mut ctx = config::load_context()?;
+    let was_current =
+        matches!(&ctx.deployment, Some(DeploymentField::Full(d)) if d.deployment_id == selected);
+    if was_current {
+        ctx.deployment = None;
+        config::save_context(&ctx)?;
+    }
+
+    println!("✅ Déploiement '{selected}' supprimé pour '{customer_name}'");
+    Ok(())
+}

@@ -251,6 +251,19 @@ YAML (`customers.yaml`/`hosts.yaml`/`services.yaml` octet-identiques à l'état 
 - [x] **5.3** `[Claude]` `cdep` (create_deployment) : validation host existant + unicité
       **globale** du `deployment_id`, champs DB optionnels selon le type de service.
       *Fait quand* : refus d'un id dupliqué + création complète d'un déploiement scratch.
+- [x] **5.4** `[Claude]` `ddep` (delete_deployment) — **capacité nouvelle, ajoutée après
+      coup** : ni le nu ni `ppo` avant ce commit n'avaient de suppression de déploiement
+      (`deployment-manager/mod.nu` n'exposait jamais cet alias). Sélection fuzzy ou id
+      direct dans les déploiements du client courant, aperçu YAML, confirmation. Alias
+      `ddep` et pas `dd`, même logique que `cdep`/`cd` : éviter de masquer l'utilitaire
+      shell `dd` (bien plus dangereux à collisionner que `cd`). Si le déploiement
+      supprimé est celui actuellement sélectionné dans `context.yaml` (record complet,
+      pas juste l'id), le contexte est désélectionné pour ne pas laisser de référence
+      pendante que `pdei`/`backup` liraient encore.
+      *Fait quand* : suppression testée en live (confirmation refusée → rien ne change ;
+      id direct et sélection fuzzy tous deux fonctionnels ; supprimer le déploiement
+      courant vide bien `context.yaml.deployment`, vérifié par `pdei` qui se remet à
+      erreurer proprement).
 
 ## Phase 6 — Backup / restore `[Claude, relu par toi]` — ✅ fait
 

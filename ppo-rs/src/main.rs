@@ -91,6 +91,9 @@ enum Command {
     /// Crée un déploiement pour le client courant (wizard interactif).
     #[command(visible_alias = "cdep")]
     CreateDeployment,
+    /// Supprime un déploiement du client courant (sélection fuzzy + confirmation).
+    #[command(visible_alias = "ddep")]
+    DeleteDeployment { deployment_id: Option<String> },
 
     /// Liste tous les services disponibles.
     #[command(visible_alias = "lss")]
@@ -220,6 +223,7 @@ fn main() -> anyhow::Result<()> {
         Command::ListDeployments => deployment::cmd_lsd()?,
         Command::SetDeployment { deployment_id } => deployment::cmd_sd(deployment_id)?,
         Command::CreateDeployment => deployment::cmd_cdep()?,
+        Command::DeleteDeployment { deployment_id } => deployment::cmd_ddep(deployment_id)?,
 
         Command::ListServices => service::cmd_lss()?,
         Command::CreateService => service::cmd_cs()?,
