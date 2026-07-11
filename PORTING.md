@@ -1234,6 +1234,44 @@ Vérifié : `cargo test` (121 tests, 1 `#[ignore]`d), `cargo clippy --all-target
 warnings`, `tests/integration_workflow.py` (backup + restore complets contre
 `odoo-demo`, chemin `path_for_service/backups` confirmé, cf. section précédente).
 
+## Extension de la couverture live/intégration `[Claude]`
+
+Hors plan de phases — à la demande explicite du sujet ("évalue la couverture des tests
+d'intégration et si on peut en faire plus"). Deux changements, dans `tests/`.
+
+**`tests/ppo_test_helpers.py` (nouveau)** — les séquences de wizard `ch`/`dh`/`cc`/`dc`/
+`ddep` et le boilerplate `vmctl`/`vm_ssh` étaient dupliqués verbatim (ou quasi) entre
+`integration_workflow.py`, `bootstrap_workflow.py` et `backup_agent_workflow.py` — un
+vrai risque de double maintenance, pas de la prudence excessive : cette session a déjà dû
+corriger le même bug de chemin `CONFIG_DIR` indépendamment dans deux fichiers avant ce
+refactor. Factorisé dans un module partagé, importé par les trois scripts ; chacun garde
+ses propres constantes et son `main()`/flux de nettoyage — seul le mécanique "piloter ce
+wizard"/"lancer cette commande VM" a bougé.
+
+**`integration_workflow.py` étendu** avec ce qui manquait vraiment à la couverture :
+- `sh` (sélection directe d'hôte par id, jamais exercée par aucun script existant).
+- `dstop`/`dstart`/`drestart` contre un conteneur scratch **dédié** (pas `odoo-demo` :
+  plusieurs conteneurs `odoo-demo*` tournent déjà sur cette machine, un nom pas
+  entièrement unique rendrait la sélection floue interactive ambiguë).
+- `cs`/`lss`/`ds` (catalogue de services) : seul sous-système CRUD encore non testé,
+  structurellement parallèle à celui des hôtes/clients/déploiements.
+- `provision` : capacité qui n'avait AUCUNE couverture, ni unitaire ni live, malgré son
+  propre commentaire de doc la signalant comme "capacité entièrement nouvelle". Round
+  trip complet sur un déploiement Vaultwarden scratch (rendu → push → `docker compose up
+  -d` → conteneur vérifié réellement `Running` → `ddep` + nettoyage docker).
+
+**Piège découvert en le construisant** : Vaultwarden tourne en root dans son conteneur et
+écrit donc des fichiers root-owned dans son volume bind-mounté (`/data`) — un `rm -rf`
+en tant qu'utilisateur non-privilégié échoue silencieusement dessus (pas de permission
+d'écriture sur ce sous-répertoire), laissant une partie du scratch data si le script se
+contentait d'un nettoyage naïf. Fixé avec `rm_rf_via_docker` : supprime le contenu via un
+conteneur Alpine jetable lancé en root sur le même bind mount, comme il a été créé.
+
+Vérifié : les trois scripts lancés en direct après le refactor + l'extension —
+`integration_workflow.py` (workflow complet, y compris les quatre nouveaux morceaux
+ci-dessus), `bootstrap_workflow.py` et `backup_agent_workflow.py` (contre la VM réelle,
+`tests/vm/`) — tous `PASS`, aucune régression du refactor partagé.
+
 ## Phase 12 — TUI `[Claude, gros morceau]`
 
 Surcouche `ratatui` sur le socle CLI (le CLI reste la référence scriptable).

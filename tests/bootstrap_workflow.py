@@ -33,12 +33,13 @@ Env: PPO_BIN to override the binary path (default: target/debug/ppo).
 """
 
 import os
-import subprocess
 import sys
 import time
 import traceback
 
 import pexpect
+
+import ppo_test_helpers as h
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PPO_BIN = os.environ.get("PPO_BIN", os.path.join(REPO_ROOT, "target", "debug", "ppo"))
@@ -62,37 +63,19 @@ def step(msg):
 
 
 def run(cmd, check=True, **kw):
-    result = subprocess.run(cmd, capture_output=True, text=True, **kw)
-    if check and result.returncode != 0:
-        raise RuntimeError(
-            f"command failed ({result.returncode}): {' '.join(cmd)}\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-    return result
+    return h.run(cmd, check=check, **kw)
 
 
 def vmctl(*args, timeout=None, check=True):
-    return run([VMCTL, *args], check=check, timeout=timeout)
+    return h.vmctl(VMCTL, *args, timeout=timeout, check=check)
 
 
 def vm_ssh(cmd, check=True):
-    return vmctl("ssh", cmd, timeout=60, check=check)
+    return h.vm_ssh(VMCTL, cmd, check=check, timeout=60)
 
 
 def spawn(args, timeout=15):
-    child = pexpect.spawn(f"{PPO_BIN} {args}", cwd=REPO_ROOT, timeout=timeout)
-    child.logfile = sys.stdout.buffer
-    return child
-
-
-def read_file(path):
-    with open(path) as f:
-        return f.read()
-
-
-def write_file(path, content):
-    with open(path, "w") as f:
-        f.write(content)
+    return h.spawn(PPO_BIN, REPO_ROOT, args, timeout=timeout)
 
 
 def preflight():
@@ -106,7 +89,7 @@ def preflight():
     if f'"{VM_NAME}"' not in vms:
         raise RuntimeError(f"VM '{VM_NAME}' does not exist — run tests/vm/setup.sh first")
 
-    hosts = read_file(os.path.join(CONFIG_DIR, "hosts.yaml"))
+    hosts = h.read_file(os.path.join(CONFIG_DIR, "hosts.yaml"))
     if f"{HOST_ID}:" in hosts:
         raise RuntimeError(
             f"'{HOST_ID}' already present in hosts.yaml — leftover from a previous "
@@ -117,14 +100,14 @@ def preflight():
 
 def snapshot():
     return {
-        "hosts.yaml": read_file(os.path.join(CONFIG_DIR, "hosts.yaml")),
-        "context.yaml": read_file(os.path.join(CONFIG_DIR, "context.yaml")),
+        "hosts.yaml": h.read_file(os.path.join(CONFIG_DIR, "hosts.yaml")),
+        "context.yaml": h.read_file(os.path.join(CONFIG_DIR, "context.yaml")),
     }
 
 
 def restore_snapshot(snap):
     for name, content in snap.items():
-        write_file(os.path.join(CONFIG_DIR, name), content)
+        h.write_file(os.path.join(CONFIG_DIR, name), content)
 
 
 def start_vm():
@@ -135,26 +118,12 @@ def start_vm():
 
 
 def create_host():
-    step(f"ch: register scratch host '{HOST_ID}' -> 127.0.0.1:{vmctl('port').stdout.strip()}")
     port = vmctl("port").stdout.strip()
-    child = spawn("ch")
-    child.expect("host_name")
-    child.sendline(HOST_ID)
-    child.expect("hostname")
-    child.sendline("127.0.0.1")
-    child.expect("user")
-    child.sendline("ppo")
-    child.expect("port")
-    child.sendline(port)
-    child.expect("ssh id file")
-    child.sendline(VM_KEY)
-    child.expect("architecture")
-    child.sendline("x86_64")
-    child.expect("Valider")
-    child.sendline("y")
-    child.expect(pexpect.EOF)
-    child.close()
-    assert child.exitstatus == 0, "ch failed"
+    step(f"ch: register scratch host '{HOST_ID}' -> 127.0.0.1:{port}")
+    h.create_host(
+        PPO_BIN, REPO_ROOT,
+        host_id=HOST_ID, hostname="127.0.0.1", user="ppo", port=port, identity_file=VM_KEY,
+    )
 
 
 def run_bootstrap_fresh():
@@ -215,15 +184,7 @@ def run_bootstrap_idempotent():
 
 def delete_host():
     step(f"dh: delete host '{HOST_ID}'")
-    child = spawn("dh")
-    child.expect("Select host")
-    child.send(HOST_ID)
-    child.sendline("")
-    child.expect("Delete")
-    child.sendline("y")
-    child.expect(pexpect.EOF)
-    child.close()
-    assert child.exitstatus == 0, "dh failed"
+    h.delete_host(PPO_BIN, REPO_ROOT, HOST_ID)
 
 
 def cleanup(snap):

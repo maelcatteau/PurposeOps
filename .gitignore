@@ -1,5 +1,6 @@
 ./controlmasters
 target/
+tests/__pycache__/
 
 tests/vm/*.img
 tests/vm/*.vdi
