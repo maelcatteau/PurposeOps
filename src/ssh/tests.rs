@@ -1,7 +1,11 @@
 //! Tests SSH. Les fonctions pures (parsing, résolution de chemin) sont couvertes par
-//! `cargo test`. Le test réseau réel est marqué `#[ignore]` — pas de suite automatisée
-//! pour ce qui touche l'infra (convention du projet), on le lance à la main :
+//! `cargo test`. Depuis l'introduction du seam `spawn`/`install_test_runner`, les
+//! fonctions qui lancent réellement `ssh` sont elles aussi couvertes, sans toucher au
+//! réseau (voir PORTING.md). Le test réseau réel reste marqué `#[ignore]` — pas de
+//! suite automatisée pour ce qui touche l'infra pour de vrai, on le lance à la main :
 //! `cargo test -- --ignored live_`.
+
+use std::sync::{Arc, Mutex};
 
 use super::*;
 
@@ -83,6 +87,58 @@ fn host_from_socket_name_valide_reconstruit_le_host() {
 #[test]
 fn host_from_socket_name_invalide_donne_none() {
     assert!(host_from_socket_name("pas-un-socket").is_none());
+}
+
+/// Hôte fictif, jamais réel : hostname/user/port choisis pour qu'aucun socket
+/// `controlmasters/` existant ne puisse coïncider (ces tests ne dépendent d'aucun
+/// vrai processus réseau une fois un faux exécuteur installé, mais un nom d'hôte
+/// clairement bidon évite toute ambiguïté à la lecture).
+fn unreachable_test_host() -> Host {
+    Host {
+        name: "test-unreachable".to_string(),
+        hostname: "test-host-unreachable.invalid".to_string(),
+        user: "test-user-seam".to_string(),
+        port: "1".to_string(),
+        identity_file: String::new(),
+        arch: String::new(),
+        docker_context: String::new(),
+        identity_key: None,
+    }
+}
+
+#[test]
+fn run_with_master_echappe_les_doubles_accolades() {
+    let host = unreachable_test_host();
+    let _socket = with_fake_socket(&host);
+    let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let captured2 = captured.clone();
+    let _g = install_connected_test_runner(move |program, args| {
+        assert_eq!(program, "ssh");
+        captured2.lock().unwrap().push(args.last().unwrap().clone());
+        Ok(fake_output(0, "ok", ""))
+    });
+
+    let out = run_with_master(&host, "echo {{foo}} et }}bar{{").unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "ok");
+
+    let sent = captured.lock().unwrap();
+    let last_sent = sent.last().expect("au moins un appel ssh attendu");
+    assert_eq!(last_sent, "echo \\{\\{foo\\}\\} et \\}\\}bar\\{\\{");
+}
+
+/// Vrai sleep de 500ms dans `create_master_connection` (délibérément pas fake-cloqué,
+/// voir PORTING.md) : ce test prend donc un peu de temps pour de vraies raisons, pas
+/// un oubli.
+#[test]
+fn run_with_master_echoue_si_la_connexion_ne_peut_jamais_etre_etablie() {
+    let host = unreachable_test_host();
+    let _g = install_test_runner(|program, _args| {
+        assert_eq!(program, "ssh");
+        Ok(fake_output(255, "", "Connection refused"))
+    });
+
+    let err = run_with_master(&host, "uptime").unwrap_err();
+    assert!(err.to_string().contains("Failed to establish master connection"));
 }
 
 /// Preuve live de la Phase 3.1 : exécute `uptime` sur mcm en réutilisant (ou créant)

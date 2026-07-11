@@ -17,7 +17,7 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -25,6 +25,108 @@ use anyhow::{Result, bail};
 
 use crate::config::Host;
 use crate::secrets;
+
+#[cfg(test)]
+type Runner = dyn Fn(&str, &[String]) -> std::io::Result<Output>;
+
+#[cfg(test)]
+thread_local! {
+    static TEST_RUNNER: std::cell::RefCell<Option<Box<Runner>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Point de passage unique pour toute commande externe lancée par ce module (et par
+/// `docker.rs`, via `spawn` réutilisée telle quelle pour son branchement `localhost`) —
+/// voir PORTING.md pour pourquoi ce plafond existe (limite Linux `MAX_ARG_STRLEN` sur un
+/// autre sujet, mais même famille de découverte : les points de spawn dispersés sont
+/// difficiles à faire évoluer ensemble). En build normal, exactement
+/// `Command::new(program).args(args).output()` — aucun changement de comportement/perf.
+/// En build de test, si un faux exécuteur a été installé sur ce thread
+/// (`install_test_runner`), il est appelé à la place, sans toucher à un vrai processus.
+pub(crate) fn spawn(program: &str, args: &[String]) -> std::io::Result<Output> {
+    #[cfg(test)]
+    {
+        let intercepted = TEST_RUNNER.with(|r| r.borrow().as_ref().map(|f| f(program, args)));
+        if let Some(result) = intercepted {
+            return result;
+        }
+    }
+    Command::new(program).args(args).output()
+}
+
+#[cfg(test)]
+pub(crate) struct TestRunnerGuard;
+
+#[cfg(test)]
+impl Drop for TestRunnerGuard {
+    fn drop(&mut self) {
+        TEST_RUNNER.with(|r| *r.borrow_mut() = None);
+    }
+}
+
+/// Installe `f` comme faux exécuteur de processus pour le thread de test courant,
+/// et retourne un guard qui le retire au `drop`. Important : les threads ouvriers de
+/// `cargo test` sont réutilisés d'un test à l'autre — sans ce nettoyage automatique, un
+/// faux exécuteur oublié fuirait dans le test suivant programmé sur le même thread.
+#[cfg(test)]
+pub(crate) fn install_test_runner<F>(f: F) -> TestRunnerGuard
+where
+    F: Fn(&str, &[String]) -> std::io::Result<Output> + 'static,
+{
+    TEST_RUNNER.with(|r| *r.borrow_mut() = Some(Box::new(f)));
+    TestRunnerGuard
+}
+
+/// Comme `install_test_runner`, mais répond d'avance "actif" à la sonde de vivacité
+/// `ssh -O check` — pratique pour un test qui veut vérifier la commande réellement
+/// envoyée sans avoir à simuler toute la mise en place de la connexion ControlMaster.
+#[cfg(test)]
+pub(crate) fn install_connected_test_runner<F>(handler: F) -> TestRunnerGuard
+where
+    F: Fn(&str, &[String]) -> std::io::Result<Output> + 'static,
+{
+    install_test_runner(move |program, args| {
+        if program == "ssh" && args.iter().any(|a| a == "check") {
+            return Ok(fake_output(0, "", ""));
+        }
+        handler(program, args)
+    })
+}
+
+/// `Output` de complaisance partagé par les tests de tout le crate (remplace la copie
+/// ad hoc jusqu'ici dupliquée dans `backup/tests.rs`).
+#[cfg(test)]
+pub(crate) fn fake_output(code: i32, stdout: &str, stderr: &str) -> Output {
+    use std::os::unix::process::ExitStatusExt;
+    Output {
+        status: std::process::ExitStatus::from_raw(code),
+        stdout: stdout.as_bytes().to_vec(),
+        stderr: stderr.as_bytes().to_vec(),
+    }
+}
+
+/// `is_master_active` retourne `false` sans jamais appeler `spawn` si le fichier de
+/// socket n'existe pas sur le vrai disque (vérification filesystem, délibérément hors
+/// du seam process-exec — voir PORTING.md). Pour exercer le chemin "connexion déjà
+/// active" malgré ça, dans n'importe quel module de test du crate, on crée un fichier
+/// de socket factice (vide, inoffensif) au chemin exact que `control_socket`
+/// calculerait — retiré au `drop`, même si le test panique en cours de route.
+#[cfg(test)]
+pub(crate) struct FakeSocket(PathBuf);
+
+#[cfg(test)]
+impl Drop for FakeSocket {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn with_fake_socket(host: &Host) -> FakeSocket {
+    let path = control_socket(host);
+    std::fs::write(&path, b"").expect("écriture du socket factice");
+    FakeSocket(path)
+}
 
 fn control_path() -> PathBuf {
     let home = std::env::var("HOME").expect("$HOME non défini");
@@ -153,15 +255,14 @@ pub fn is_master_active(host: &Host) -> bool {
     if !socket.exists() {
         return false;
     }
-    Command::new("ssh")
-        .args(["-O", "check", "-S"])
-        .arg(&socket)
-        .arg(ssh_target(host))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let args = vec![
+        "-O".to_string(),
+        "check".to_string(),
+        "-S".to_string(),
+        socket.display().to_string(),
+        ssh_target(host),
+    ];
+    spawn("ssh", &args).map(|o| o.status.success()).unwrap_or(false)
 }
 
 /// Crée la connexion maître (`ssh -M -N -f -n ...`). Nettoie un socket orphelin
@@ -181,7 +282,7 @@ pub fn create_master_connection(host: &Host) -> bool {
     args.extend(common_args(&socket, host));
     args.push(target.clone());
 
-    if let Err(e) = Command::new("ssh").args(&args).status() {
+    if let Err(e) = spawn("ssh", &args) {
         println!("⚠️ ssh -M a retourné une erreur (potentiellement bénigne) : {e}");
     }
 
@@ -216,7 +317,7 @@ pub fn run_with_master(host: &Host, command: &str) -> Result<Output> {
     args.push(ssh_target(host));
     args.push(escaped);
 
-    Ok(Command::new("ssh").args(&args).output()?)
+    Ok(spawn("ssh", &args)?)
 }
 
 /// Exécute une commande shell brute sur l'hôte : localement si `hostname == "localhost"`,
@@ -225,7 +326,7 @@ pub fn run_with_master(host: &Host, command: &str) -> Result<Output> {
 /// qui n'est pas du `docker` (voir `docker::run_docker_command` pour ce cas-là).
 pub fn exec_shell(host: &Host, cmd: &str) -> Result<Output> {
     if host.hostname == "localhost" {
-        Ok(Command::new("sh").arg("-c").arg(cmd).output()?)
+        Ok(spawn("sh", &["-c".to_string(), cmd.to_string()])?)
     } else {
         run_with_master(host, cmd)
     }
@@ -258,13 +359,14 @@ pub fn close_master_connection(host: &Host) -> bool {
     }
 
     println!("🔄 Closing master connection to {target}...");
-    let result = Command::new("ssh")
-        .args(["-O", "exit", "-S"])
-        .arg(&socket)
-        .arg(&target)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
+    let args = vec![
+        "-O".to_string(),
+        "exit".to_string(),
+        "-S".to_string(),
+        socket.display().to_string(),
+        target.clone(),
+    ];
+    let result = spawn("ssh", &args).map(|o| o.status.success()).unwrap_or(false);
 
     if result {
         println!("✅ Master connection closed for {target}");
@@ -328,13 +430,14 @@ pub fn close_all_master_connections() {
         };
         let target = ssh_target(&host);
         let socket = control_socket(&host);
-        let ok = Command::new("ssh")
-            .args(["-O", "exit", "-S"])
-            .arg(&socket)
-            .arg(&target)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+        let args = vec![
+            "-O".to_string(),
+            "exit".to_string(),
+            "-S".to_string(),
+            socket.display().to_string(),
+            target.clone(),
+        ];
+        let ok = spawn("ssh", &args).map(|o| o.status.success()).unwrap_or(false);
         if ok {
             println!("  ✅ Closed connection to {target}");
             closed += 1;

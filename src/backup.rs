@@ -39,13 +39,10 @@ fn exec_remote(args: &[&str], host: &Host) -> Result<Output> {
 }
 
 /// Commande shell brute (non-docker) sur l'hôte cible : `sh -c` en local, sinon la
-/// connexion SSH ControlMaster.
+/// connexion SSH ControlMaster. Délègue à `ssh::exec_shell` (même logique, pas de
+/// second seam à maintenir).
 fn exec_remote_shell(cmd: &str, host: &Host) -> Result<Output> {
-    if host.hostname == "localhost" {
-        Ok(Command::new("sh").arg("-c").arg(cmd).output()?)
-    } else {
-        ssh::run_with_master(host, cmd)
-    }
+    ssh::exec_shell(host, cmd)
 }
 
 fn check_step(result: &Output, step: &str) -> Result<()> {

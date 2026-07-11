@@ -141,3 +141,60 @@ fn container_op_docker_command_correspond_au_sous_commande_docker_attendue() {
     assert_eq!(ContainerOp::Stop.docker_command(), "stop");
     assert_eq!(ContainerOp::Restart.docker_command(), "restart");
 }
+
+fn localhost_host() -> Host {
+    Host {
+        name: "localhost".to_string(),
+        hostname: "localhost".to_string(),
+        user: String::new(),
+        port: String::new(),
+        identity_file: String::new(),
+        arch: String::new(),
+        docker_context: String::new(),
+        identity_key: None,
+    }
+}
+
+/// Hôte fictif, jamais réel (voir la même précaution dans `ssh/tests.rs`) : un
+/// hostname/user/port réels pourrait coïncider avec un vrai socket `controlmasters/`
+/// déjà ouvert et faire échouer l'écriture du socket factice avec ENXIO.
+fn remote_host() -> Host {
+    Host {
+        name: "test-unreachable-docker".to_string(),
+        hostname: "test-host-unreachable.invalid".to_string(),
+        user: "test-user-seam-docker".to_string(),
+        port: "1".to_string(),
+        identity_file: String::new(),
+        arch: String::new(),
+        docker_context: String::new(),
+        identity_key: None,
+    }
+}
+
+#[test]
+fn run_docker_command_en_local_appelle_docker_directement() {
+    let host = localhost_host();
+    let _g = ssh::install_test_runner(|program, args| {
+        assert_eq!(program, "docker");
+        assert_eq!(args, ["ps", "-a", "--format", "json"]);
+        Ok(ssh::fake_output(0, "", ""))
+    });
+
+    let out = run_docker_command(&["ps", "-a", "--format", "json"], &host).unwrap();
+    assert!(out.status.success());
+}
+
+#[test]
+fn run_docker_command_a_distance_quote_les_arguments_dans_une_seule_commande_ssh() {
+    let host = remote_host();
+    let _socket = ssh::with_fake_socket(&host);
+    let _g = ssh::install_connected_test_runner(|program, args| {
+        assert_eq!(program, "ssh");
+        let sent = args.last().unwrap();
+        assert_eq!(sent, "docker 'inspect' 'my container'");
+        Ok(ssh::fake_output(0, "", ""))
+    });
+
+    let out = run_docker_command(&["inspect", "my container"], &host).unwrap();
+    assert!(out.status.success());
+}

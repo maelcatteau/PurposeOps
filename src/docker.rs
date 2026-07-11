@@ -5,7 +5,7 @@
 //! parsing `from ssv -a` de colonnes alignées à espaces — plus robuste, docker le
 //! supporte nativement. Le filtre `=~` du nu (regex) est reproduit avec le crate `regex`.
 
-use std::process::{Command, Output};
+use std::process::Output;
 
 use anyhow::{Result, anyhow, bail};
 use regex::Regex;
@@ -21,9 +21,12 @@ fn shell_quote(arg: &str) -> String {
 }
 
 /// Exécute `docker <command...>` en local, ou via SSH ControlMaster si l'hôte est distant.
+/// Le branchement local passe par `ssh::spawn` (pas un `Command::new("docker")` direct)
+/// pour réutiliser le même seam de test que `ssh.rs` plutôt que d'en dupliquer un.
 pub fn run_docker_command(command: &[&str], host: &Host) -> Result<Output> {
     if host.hostname == "localhost" {
-        Ok(Command::new("docker").args(command).output()?)
+        let args: Vec<String> = command.iter().map(|a| a.to_string()).collect();
+        Ok(ssh::spawn("docker", &args)?)
     } else {
         let mut parts = vec!["docker".to_string()];
         parts.extend(command.iter().map(|a| shell_quote(a)));

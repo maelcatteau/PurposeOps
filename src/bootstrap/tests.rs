@@ -36,3 +36,46 @@ fn missing_capabilities_filters_selectively() {
     assert!(missing.iter().any(|c| c.label == "Netdata"));
     assert_eq!(missing.len(), CAPABILITIES.len() - 1);
 }
+
+fn localhost_host() -> Host {
+    Host {
+        name: "localhost".to_string(),
+        hostname: "localhost".to_string(),
+        user: String::new(),
+        port: String::new(),
+        identity_file: String::new(),
+        arch: String::new(),
+        docker_context: String::new(),
+        identity_key: None,
+    }
+}
+
+#[test]
+fn is_installed_vrai_si_la_commande_de_detection_reussit() {
+    let host = localhost_host();
+    let cap = &CAPABILITIES[0];
+    let _g = ssh::install_test_runner(|program, args| {
+        assert_eq!(program, "sh");
+        assert_eq!(args, ["-c".to_string(), CAPABILITIES[0].detect.to_string()]);
+        Ok(ssh::fake_output(0, "/usr/bin/docker", ""))
+    });
+    assert!(is_installed(&host, cap));
+}
+
+#[test]
+fn is_installed_faux_si_la_commande_de_detection_echoue() {
+    let host = localhost_host();
+    let cap = &CAPABILITIES[0];
+    let _g = ssh::install_test_runner(|_program, _args| Ok(ssh::fake_output(1, "", "not found")));
+    assert!(!is_installed(&host, cap));
+}
+
+#[test]
+fn is_installed_faux_si_le_spawn_lui_meme_echoue() {
+    let host = localhost_host();
+    let cap = &CAPABILITIES[0];
+    let _g = ssh::install_test_runner(|_program, _args| {
+        Err(std::io::Error::other("boom : ssh indisponible"))
+    });
+    assert!(!is_installed(&host, cap));
+}

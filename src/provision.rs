@@ -221,3 +221,6 @@ pub fn cmd_provision() -> Result<()> {
     println!("✅ Service '{deployment_id}' provisionné pour '{customer_name}' sur '{host_id}'");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
