@@ -531,14 +531,20 @@ le schéma de clés est étendu pour rendre la config **auto-portable** :
       (`identity_key` de `mcm` remis à absent — la migration définitive attend 8.4,
       volontairement : ce test valide le mécanisme, il ne doit pas être celui qui chiffre
       `mcm` en prod comme effet de bord).
-- [ ] **8.4** `[Claude]` `ppo secrets encrypt` : migration en place de la config réelle
+- [x] **8.4** `[Claude]` `ppo secrets encrypt` : migration en place de la config réelle
       (génère les clés clients manquantes, chiffre `identity_file`→`identity_key` et
       `db_credentials.password`, réécrit les YAML).
       *Fait quand* : plus aucun secret en clair dans `PurposeOps-config/` ; retirer le
       fichier de clé d'un client fait échouer exactement (et seulement) ce qui dépend de
       lui (preuve que le cloisonnement par client fonctionne réellement).
 
-      **Commande écrite et vérifiée, migration réelle pas encore lancée.**
+      **Fait — migration réelle lancée et confirmée le 2026-07-11**, sur accord explicite
+      après la vérification en isolation ci-dessous. `hosts.yaml`/`customers.yaml`
+      portent désormais de vraies valeurs `enc:...` (mots de passe DB de Mael et Sylvie,
+      clés SSH de `mcm`/`ngner`) ; commit correspondant dans le submodule
+      `PurposeOps-config` : "Encrypt DB passwords and SSH host keys at rest". Plus aucun
+      secret en clair dans la config réelle depuis cette exécution.
+
       `cmd_secrets_encrypt` (`secrets.rs`) : parcourt tous les déploiements de
       `customers.yaml`, chiffre chaque `db_credentials.password` encore en clair (clé du
       client propriétaire, générée si besoin) ; parcourt tous les hôtes de `hosts.yaml`
@@ -563,10 +569,11 @@ le schéma de clés est étendu pour rendre la config **auto-portable** :
       vrai les secrets réels de Mael et Sylvie comme effet de bord non voulu de la
       vérification — **annulé aussitôt** (`hosts.yaml`/`customers.yaml` restaurés à
       l'identique depuis une sauvegarde prise avant le test, `~/.config/ppo/keys/` vidé).
-      La commande est donc prouvée correcte mais volontairement pas encore lancée pour
-      de bon sur la config réelle : chiffrer les vrais secrets de production est une
-      action délibérée, pas un effet de bord d'un test — en attente d'un accord explicite
-      avant de l'exécuter pour de vrai.
+      La commande a ensuite été prouvée correcte par ce test isolé, puis lancée pour de
+      bon sur la config réelle sur accord explicite ("Yes, run it now") — chiffrer les
+      vrais secrets de production était une action délibérée, pas un effet de bord d'un
+      test. Voir le paragraphe "Fait" ci-dessus pour le résultat de cette exécution
+      réelle.
 
 ## Phase 9 — Provisioning end-to-end `[Claude]` — ✅ fait
 
