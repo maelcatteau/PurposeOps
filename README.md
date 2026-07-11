@@ -143,8 +143,11 @@ cargo test               # pure-logic unit tests (quoting, YAML round-trips, cry
 cargo clippy --all-targets
 ```
 
-Anything that touches a remote host, Docker, or an interactive prompt is verified
-**live** against real infrastructure — there's no CI. The one repeatable check beyond
+CI (`.github/workflows/ci.yml`) runs exactly that on every push/PR — build, test, clippy —
+nothing more, since that's the whole subset of verification with no dependency on real
+infrastructure. Anything that touches a remote host, Docker, or an interactive prompt is
+still verified **live**, by hand, against real infrastructure; the live tests below are
+intentionally local-only and don't run in CI. The one repeatable check beyond
 `cargo test` is:
 
 ```sh

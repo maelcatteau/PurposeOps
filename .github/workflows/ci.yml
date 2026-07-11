@@ -1,0 +1,43 @@
+name: CI
+
+# Covers only what's safe to run on a hosted runner: build, unit tests, lint.
+#
+# Deliberately NOT run here — both need real infrastructure a hosted runner doesn't have,
+# and are meant to be run locally (see CLAUDE.md / README.md "Development"):
+#   - tests/integration_workflow.py   needs local odoo-demo/odoo-demo-db Docker containers
+#                                      from a sibling repo not checked out here.
+#   - tests/bootstrap_workflow.py     needs a VirtualBox VM with nested virtualization,
+#                                      which hosted runners don't reliably support.
+# `cargo test` itself has no such dependency: the one test that touches a real host/config
+# (ssh::tests::live_run_with_master_uptime_on_mcm) is #[ignore]d and excluded by default.
+
+on:
+  push:
+    branches: [master, rust]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ppo-rs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ppo-rs
+
+      - name: cargo build
+        run: cargo build --verbose
+
+      - name: cargo test
+        run: cargo test --verbose
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
