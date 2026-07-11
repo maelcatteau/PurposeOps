@@ -26,10 +26,12 @@ module, and `~/.config/starship.toml`'s `[custom.ppo_context]` calls `~/.cargo/b
   live in the sibling file `src/<mod>/tests.rs` (with `use super::*;` to reach private items). A file
   module `foo.rs` may coexist with a `foo/` directory for its submodules (2018+ edition) — that's how
   `config.rs` + `config/tests.rs` and `prompt.rs` + `prompt/tests.rs` are laid out.
-- **Progress: Phases 1–10 done** (prompt, config CRUD, SSH ControlMaster, Docker, backup/restore,
-  shell completions, the cutover, secrets-at-rest encryption, provisioning, and host bootstrap —
-  see `PORTING.md` for what was verified at each step). Phases 11–12 (automated backups, TUI) are
-  independent, unstarted, and can be tackled in any order.
+- **Progress: Phases 1–11 done** (prompt, config CRUD, SSH ControlMaster, Docker, backup/restore,
+  shell completions, the cutover, secrets-at-rest encryption, provisioning, host bootstrap, and a
+  self-hosted backup agent with cron + ntfy alerting — see `PORTING.md` for what was verified at
+  each step). Cross-arch agent builds (Phase 11.6) are deliberately deferred: spec'd but not
+  automated, since every host in the fleet today is `x86_64`. Phase 12 (TUI) is independent and
+  unstarted.
 - `cargo test` covers only pure logic (quoting, YAML round-trips, prompt formatting, `age`
   encrypt/decrypt) and has no dependency on real infrastructure — CI (`.github/workflows/ci.yml`)
   runs `cargo build`/`test`/`clippy` on every push/PR to `master`/`rust`. Anything touching a remote
@@ -61,6 +63,16 @@ module, and `~/.config/starship.toml`'s `[custom.ppo_context]` calls `~/.cargo/b
   `ssh::exec_shell`/`exec_shell_checked`. Note: `VBoxManage snapshot restore` reverts machine
   settings (e.g. `--uartmode1`) as well as disk state, not just the disk — apply any one-off
   `modifyvm` change *after* a revert, not before, or it's silently undone.
+- **`tests/backup_agent_workflow.py`**: same idea, for `ppo backup bootstrap-agent` (installing a
+  self-contained `ppo` agent + local cron on a deployment's own host — see PORTING.md Phase 11).
+  Reuses `tests/vm/` rather than a third harness. Verifies the pushed binary runs, the generated
+  `/etc/cron.d/...` entry and scoped config are correct, a directly-triggered `backup run --cron`
+  actually produces an archive, a deliberately broken run reports a nonzero exit **and** that the
+  failure notification actually reaches a real ntfy topic (polled, not just trusted), and that
+  re-running `bootstrap-agent` replaces the cron file rather than duplicating it. Same currency
+  rule: update and run it whenever a change touches `backup_agent.rs`, `provision.rs`'s
+  `push_file`/`push_binary`, `secrets.rs`'s agent-identity functions, or `backup.rs`'s retention/
+  `notify_failure` additions.
 
 ## Archived Nushell module (`archive/`, reference only)
 

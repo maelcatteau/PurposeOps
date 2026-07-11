@@ -765,7 +765,8 @@ Faite juste avant de fusionner la branche `rust` dans `master`. Motivation concr
 statistiques « Languages » de GitHub reflètent l'arbre de la branche **par défaut**
 (`master`), pas de la branche courante — tout le travail Rust ayant vécu sur `rust` sans
 jamais être fusionné, `master` ne montrait toujours que le nu, d'où le 100% Nushell affiché
-sur la page du dépôt malgré des mois de portage. La fusion à elle seule aurait réglé
+sur la page du dépôt alors que le portage Rust était déjà bien avancé (démarré le
+2026-07-10). La fusion à elle seule aurait réglé
 l'affichage ; réorganiser l'arborescence en même temps aligne aussi la structure du dépôt
 avec ce qui est réellement le projet actif.
 
@@ -794,15 +795,237 @@ avec ce qui est réellement le projet actif.
   dans le dépôt — aucune modification de `src/` nécessaire pour ce déplacement.
   Revérifié après coup : `cargo build`/`cargo test`/`cargo clippy` verts depuis la racine.
 
-## Phase 11 — Backups automatisés `[Claude, relu par toi]`
+## Phase 11 — Agent de backup autonome `[Claude]` — ✅ fait (11.6 volontairement différé)
 
-Réutilise le backup (6) + secrets (8).
+**Changement de direction par rapport au plan initial.** La version originale de cette
+phase prévoyait un `ppor backup all` appelé par le timer système **du laptop**. Problème
+concret soulevé en discussion : ça fait dépendre les sauvegardes de la disponibilité du
+laptop (allumé, éveillé, sur le réseau) au moment où le cron doit se déclencher — pas
+acceptable pour des sauvegardes nocturnes non surveillées. Nouvelle conception : chaque
+déploiement reçoit un agent `ppo` autonome poussé sur **son propre hôte**, et c'est le
+cron de CET hôte qui lance `ppo backup run --cron` localement, avec alerte `ntfy` en cas
+d'échec.
 
-- [ ] **11.1** Rotation/rétention : nommage horodaté, purge au-delà de N backups.
+Constat clé qui rend ça possible sans dupliquer la logique de sauvegarde : chaque point de
+dispatch distant (`docker::run_docker_command`, `backup.rs`'s `exec_remote_shell`,
+`ssh::exec_shell`) vérifie déjà `host.hostname == "localhost"` en premier et prend un
+chemin d'exécution locale pure avant de toucher à SSH/ControlMaster. Un `Host` scopé avec
+`hostname: "localhost"` suffit donc à faire tourner `do_generic_backup`/`run_backup_steps`
+**tels quels**, sur l'hôte lui-même — zéro changement à la logique de sauvegarde, zéro
+duplication (pas de script bash généré séparément : l'agent, c'est le vrai binaire `ppo`).
+
+- [x] **11.1** `[Claude]` Rotation/rétention : `--keep-last N` sur `backup run`, purge des
+      archives au-delà des N plus récentes dans le dossier de sortie.
       *Fait quand* : N backups gardés, plus vieux purgés automatiquement.
-- [ ] **11.2** Planification : `ppor backup all` (tous les déploiements DB) appelé par un
-      timer système (cron/systemd), + rapport succès/échec.
-      *Fait quand* : un job nocturne backup toute la flotte et notifie en cas d'échec.
+
+      **Fait** : `src/backup.rs`, `backups_to_purge` (pure, testée) + `purge_old_backups`
+      (réutilise `list_remote_backups`, déjà triée `ls -1t` du plus récent au plus
+      ancien). Pas de valeur par défaut cachée dans `backup run` lui-même : sans
+      `--keep-last`, aucune purge — le "10 par défaut" ne vit que dans le flag de
+      `bootstrap-agent` (11.4), pour que le comportement de `backup run` reste entièrement
+      prévisible depuis ses propres arguments, peu importe qui l'appelle. Purge
+      best-effort/non-fatale : un échec de purge n'invalide pas un backup par ailleurs
+      réussi et ne déclenche pas de notification `ntfy` (le backup, lui, a réussi).
+
+- [x] **11.2** `[Claude]` Transfert d'un exécutable compilé vers un hôte distant :
+      `provision::push_binary`, envoi par blocs plutôt qu'en une seule commande.
+      *Fait quand* : un binaire de plusieurs Mo arrive intact sur l'hôte distant.
+
+      **Fait** : `src/provision.rs`. Le mécanisme existant (`push_file`, `echo '<b64>' |
+      base64 -d > path` en une seule commande shell) est un **blocage réel, mesuré**, pas
+      une hypothèse : Linux plafonne un unique argument/variable d'environnement à
+      `MAX_ARG_STRLEN` = 128 KiB (indépendant du plus grand `ARG_MAX` = 2 MiB qui limite
+      la somme argv+envp — confirmé `getconf ARG_MAX` = 2097152 sur cette machine), et le
+      binaire release fait ~4.8 Mo une fois strippé (`[profile.release] strip = true`
+      ajouté à `Cargo.toml`, 6.1 Mo → 4.8 Mo mesuré), soit largement plus une fois encodé
+      en base64. `push_binary` découpe donc en blocs de 64 KiB bruts (~87 KiB encodés,
+      marge confortable sous 128 KiB), écrits en `>>` successifs sur la connexion
+      ControlMaster déjà authentifiée, purge un envoi précédent interrompu avant de
+      commencer (les blocs s'accumulent, un fichier partiel corromprait le résultat),
+      vérifie l'intégrité par `sha256sum` (local + distant, comparés) plutôt que d'ajouter
+      une dépendance `sha2` — même principe que `local_timestamp()` s'appuyant sur `date`.
+      **La taille de bloc de 64 KiB est une valeur de départ dérivée du calcul de la
+      contrainte, pas encore validée en conditions réelles contre un VPS distant** — à
+      confirmer lors de la vérification live (11.7).
+
+- [x] **11.3** `[Claude]` Identité `age` scopée à l'agent, pas celle du client.
+      *Fait quand* : le mot de passe DB poussé sur l'hôte se déchiffre avec une identité
+      qui ne déchiffre rien d'autre.
+
+      **Fait** : `src/secrets.rs`, `load_or_generate_agent_identity`/
+      `agent_identity_path` (`~/.config/ppo/keys/agent-<deployment_id>.txt`), même
+      mécanique que `load_or_generate_customer_identity`. **Décision de sécurité
+      explicite** : l'identité RÉELLE d'un client déchiffre tous ses secrets, sur tout le
+      parc, pour toujours ; la mettre sur un hôte de cron non surveillé — hôte souvent
+      partagé entre plusieurs clients (`ngner` héberge à la fois Cocotte et Sylvie) — ferait
+      qu'un seul hôte compromis expose tout l'historique de secrets de ce client, pas
+      seulement ce mot de passe DB. À la place, une identité par déploiement est ajoutée
+      comme second destinataire aux côtés de celle du client (même mécanisme
+      multi-destinataires `age` déjà utilisé pour `Host.identity_key` en Phase 8.3) —
+      `backup_agent::ensure_agent_recipient` fait ce (ré)chiffrement et réécrit le
+      `customers.yaml` réel. **Même catégorie d'action que la migration Phase 8.4** (mute
+      des secrets réels) : à vérifier contre des données de test avant tout déploiement
+      contre un client réel — pas encore fait à ce stade (voir 11.7).
+      `load_all_local_identities` n'a nécessité aucune modification : elle charge déjà
+      tout fichier `.txt` de `~/.config/ppo/keys/` quel que soit son nom, donc `reveal()`
+      prend en compte une identité d'agent dès qu'elle est présente sur la machine.
+
+- [x] **11.4** `[Claude]` `src/backup_agent.rs` (nouveau module) + `ppo backup
+      bootstrap-agent [deployment_id] [--ntfy-url URL] [--keep-last N]`.
+      *Fait quand* : un déploiement scratch tourne en autonome sur son propre hôte.
+
+      **Fait**. Module séparé plutôt qu'ajout à `bootstrap.rs`/`backup.rs`/`provision.rs` :
+      `bootstrap.rs` est conçu pour une liste fixe de capacités **au niveau de l'hôte**,
+      sans notion de "quel déploiement" (voir Phase 10.1) — mauvaise forme pour ce
+      besoin ; `backup.rs` exécute une sauvegarde, ce module-ci *installe ce qui exécutera
+      plus tard des sauvegardes* — cycle de vie différent. Réutilise les primitives de
+      transfert de `provision.rs` (`push_file` rendu `pub(crate)`, `push_binary`).
+
+      Builders purs et testés (`src/backup_agent/tests.rs`) : `build_scoped_host`
+      (`hostname` forcé à `localhost`, `identity_key`/`identity_file`/`port` vidés — un
+      `Host` nommé `localhost` n'atteint jamais la résolution d'identité SSH, inutile d'y
+      dupliquer la clé de la VPS elle-même), `build_scoped_customers` (un seul client, un
+      seul déploiement — celui ciblé, même si ce client en a d'autres ailleurs),
+      `build_scoped_context`, `build_cron_line`.
+
+      **Bug réel trouvé en écrivant le test live (11.7), avant même de le lancer** :
+      `docker::run_docker_command` ne préfixe jamais `sudo` côté distant — hypothèse vraie
+      aujourd'hui uniquement parce que chaque hôte existant a été provisionné à la main
+      avant `ppo`, avec l'utilisateur SSH déjà dans le groupe `docker`. Un hôte fraîchement
+      préparé par `ppo bootstrap` (Phase 10) n'a PAS cette appartenance : le script
+      `get.docker.com` se contente de *suggérer* `usermod -aG docker`, il ne le fait pas.
+      Sans correctif, l'agent (ses propres appels `docker`, jamais en `sudo`) aurait
+      échoué en "permission denied" à chaque exécution cron réelle. Corrigé en ajoutant
+      `sudo usermod -aG docker <user>` (idempotent) tôt dans `cmd_backup_bootstrap_agent` —
+      inutile pour les étapes de LA commande elle-même (aucune n'appelle `docker`
+      directement), mais l'appartenance à un groupe ne prend effet qu'à une nouvelle
+      session de connexion, et c'est exactement ce que cron démarre à chaque déclenchement.
+
+      Orchestration (`cmd_backup_bootstrap_agent`) : résolution du déploiement (menu sur
+      TOUS les clients si omis — outil de mise en place ponctuelle, ne dépend pas du
+      contexte de session courant) → ajout au groupe `docker` (ci-dessus) →
+      `ensure_agent_recipient` (11.3) → vérification d'architecture (`Host.arch` vs
+      `std::env::consts::ARCH`, mappage `arm64`↔`aarch64` ; erreur explicite et
+      actionnable si différente — voir 11.6, pas de compilation croisée automatisée) →
+      `cargo build --release` → envoi de `hosts.yaml`/
+      `customers.yaml`/`context.yaml` scopés, de l'identité d'agent (`chmod 600`), du
+      binaire (`push_binary`) → **test de fumée obligatoire** (`<binaire> --help` en SSH,
+      immédiatement après l'envoi — gratuit grâce à `clap`, attrape mauvaise architecture/
+      bibliothèque partagée manquante/transfert corrompu tout de suite plutôt que
+      silencieusement au premier cron réel) → rendu + installation de la tâche cron
+      (`sudo install -m 0644 ... /etc/cron.d/ppo-backup-<deployment_id>`, réécriture
+      atomique, donc idempotente par construction).
+
+      Convention de chemin réutilisée telle quelle sur l'hôte distant
+      (`~/dev/nu-modules/PurposeOps/PurposeOps-config/...`), **pas de nouveau flag
+      `--config-dir`** : vérifié que tout ce qui vit sous `config::base_path()` et
+      dépendrait spécifiquement du laptop (`controlmasters/`, `~/.cache/ppo/keys/` pour la
+      clé SSH matérialisée) n'est atteint que par `run_with_master`/
+      `resolved_identity_path`, structurellement inatteignables une fois
+      `hostname == "localhost"`. Réutilisation aussi de `ssh::resolve_remote_path`
+      (promue depuis `backup.rs`, désormais partagée par les deux modules) pour les
+      chemins `~/...` construits pour l'agent — les entourer de guillemets simples dans
+      une commande shell distante en empêcherait sinon l'expansion (gotcha déjà documenté
+      dans CLAUDE.md).
+
+      **Deuxième bug réel trouvé en écrivant le test live (11.7)** : `resolve_remote_path`
+      remplaçait `~` par `/home/ngner` codé en dur — vrai partout sur le parc réel
+      (utilisateur SSH toujours `ngner`), faux contre la VM de test (utilisateur `ppo`),
+      ce qui aurait fait pousser la config/le binaire/l'identité au mauvais endroit
+      (`/home/ngner/...`, ni accessible en écriture ni même existant pour l'utilisateur
+      `ppo`). Corrigé en dérivant le home de `host.user` (`/home/<user>`) plutôt qu'une
+      constante — signature de `resolve_remote_path` changée en conséquence, tous les
+      appels de `backup.rs` (5) et `backup_agent.rs` (4) mis à jour pour passer
+      `host.user`/`real_host.user`. Aucun changement de comportement sur le parc réel
+      (tous les hôtes actuels ont `user: ngner`), mais la fonction ne dépend plus d'une
+      hypothèse fausse dès qu'un hôte a un utilisateur différent — exactement le genre de
+      chose que la Phase 9.2/10.2 n'avaient jamais eu l'occasion de révéler, faute d'avoir
+      testé contre un hôte à utilisateur SSH différent avant celui-ci.
+
+- [x] **11.5** `[Claude]` Notification d'échec via `ntfy`.
+      *Fait quand* : un backup cron en échec déclenche une notification `ntfy` réelle.
+
+      **Fait** : `src/backup.rs`, `notify_failure`, gérée **à l'intérieur de
+      `cmd_backup_run`** plutôt qu'en `curl || ...` sur la ligne cron — `Result` porte
+      déjà l'étape précise qui a échoué (`anyhow::Error`), un `||` au niveau shell après
+      la sortie du processus n'aurait su qu'un "code de sortie non nul", perdant ce
+      détail. `cmd_backup_run` est désormais une fine enveloppe autour de
+      `run_backup_for_current_deployment` : elle couvre aussi les erreurs de pré-vol
+      (client/déploiement introuvable, credentials illisibles...), pas seulement celles
+      internes à `do_generic_backup` — sur un agent scopé à un seul déploiement, n'importe
+      quelle erreur de ce chemin mérite une alerte. Topic/URL transitent par une ligne
+      `NTFY_URL=...` dans le fichier `/etc/cron.d/...` généré (`cron.d` accepte des
+      affectations de variable d'environnement) ; lue au runtime, absente = notification
+      silencieusement sautée (un run manuel interactif sur le laptop n'a pas besoin d'une
+      alerte push) — zéro changement de schéma YAML. **Angle mort accepté explicitement** :
+      si le binaire ne démarre même pas (transfert corrompu, bibliothèque manquante),
+      aucune notification interne ne se déclenche — partiellement couvert par le test de
+      fumée `--help` obligatoire de 11.4, qui attrape cette classe de panne *avant*
+      l'installation de la tâche cron plutôt que de la découvrir silencieusement au
+      premier déclenchement réel.
+
+- [ ] **11.6** `[Claude]` Compilation croisée (`Host.arch` différent de la machine qui
+      lance `bootstrap-agent`) — **spec seulement, pas d'automatisation**.
+      *Fait quand* : un hôte `arm64` réel existe et peut recevoir un agent compilé pour
+      lui.
+
+      Décision assumée : tout hôte du parc actuel est `x86_64` (vérifié dans
+      `hosts.yaml`) ; construire et tester une chaîne de compilation croisée contre zéro
+      hôte `arm64` réel serait spéculatif. `backup_agent::host_matches_local_arch` détecte
+      déjà le cas et échoue avec un message actionnable (`rustup target add <triple>` +
+      paquet linker croisé apt, ex. `gcc-aarch64-linux-gnu`, puis `cargo build --release
+      --target <triple>`) plutôt que de tenter quoi que ce soit automatiquement. À
+      reprendre quand un hôte non-`x86_64` existera réellement — recommandation pour ce
+      moment-là : cibles `*-unknown-linux-musl` plutôt que `gnu`, pour éviter un décalage
+      de version glibc entre la machine de build et le Debian/Ubuntu réel de la VPS.
+
+- [x] **11.7** `[Claude]` Vérification live (VM, comme la Phase 10.2).
+      *Fait quand* : cycle complet installation → vérification fonctionnelle →
+      ré-exécution idempotente → notification d'échec réelle, rejouable sans
+      réintervention manuelle.
+
+      **Fait** : `tests/backup_agent_workflow.py`, réutilisant `tests/vm/` (déjà construit
+      pour la Phase 10.2) plutôt qu'un second harnais. Revert/boot de la VM → `ch` (hôte
+      distinct de `localhost`, pour emprunter le vrai chemin ControlMaster côté envoi) →
+      `ppo bootstrap` (Docker seul, pas les 4 capacités — inutile ici) → conteneurs
+      postgres + "app" factice minimal démarrés en direct par SSH (la branche "filestore
+      absent" de `run_backup_steps` gère déjà l'absence de filestore, pas besoin d'un vrai
+      Odoo) → `cdep` avec de vrais `db_credentials` → `ppo backup bootstrap-agent
+      --ntfy-url https://ntfy.sh/<topic-de-test-unique>` depuis le laptop → vérification
+      **en direct par SSH, indépendamment de `ppo`** (binaire `--help`, contenu du
+      `/etc/cron.d/...`, YAML scopés, permissions `600` de l'identité d'agent) →
+      déclenchement direct de `backup run --cron` par une connexion SSH ponctuelle
+      (nouvelle session à chaque fois, comme le ferait cron réellement — pas la connexion
+      ControlMaster persistante de `ppo`, pour que l'effet du correctif groupe `docker`
+      ci-dessus soit vraiment exercé) → archive confirmée sur le disque distant → casse
+      volontaire (arrêt du conteneur DB) + nouveau déclenchement → code de sortie non nul
+      **et** sondage réel de l'API `ntfy` (`.../json?poll=1`) confirmant que la
+      notification est réellement arrivée → ré-exécution de `bootstrap-agent`, fichier
+      `cron.d` remplacé et non dupliqué → nettoyage (`ddep`/`dc`/`dh`, restauration du
+      snapshot de config, arrêt de la VM). **Passé du premier coup, une fois les deux bugs
+      ci-dessous corrigés.**
+
+      **Deux bugs réels supplémentaires trouvés en écrivant/lançant ce test** (aucun dans
+      la logique de sauvegarde elle-même) :
+      1. La réorganisation du dépôt (voir plus haut, "Rust à la racine") avait cassé le
+         calcul de `CONFIG_DIR` dans `integration_workflow.py`/`bootstrap_workflow.py` —
+         `os.path.dirname(REPO_ROOT)` pointait vers le mauvais dossier une fois `tests/`
+         remonté d'un niveau (avant, `REPO_ROOT` = `ppo-rs/`, donc `dirname(REPO_ROOT)` =
+         racine du dépôt ; après, `REPO_ROOT` = racine du dépôt directement, donc
+         `dirname(REPO_ROOT)` = *son parent*). Personne ne l'avait remarqué : aucun des
+         deux scripts n'avait été relancé après la restructuration, seuls `cargo build`/
+         `test`/`clippy` et `nu-check` l'avaient été. Corrigé (`CONFIG_DIR =
+         os.path.join(REPO_ROOT, "PurposeOps-config")`), et `integration_workflow.py`
+         relancé avec succès pour confirmer.
+      2. La VM `ppo-bootstrap-test` elle-même avait survécu à la restructuration avec un
+         disque enregistré sur l'ancien chemin (`ppo-rs/tests/vm/ubuntu-24.04.vdi`) —
+         `git mv` déplace aussi les fichiers non suivis d'un répertoire entier (les
+         `.vdi`/`.img` sont gitignorés mais ont bien été déplacés physiquement), mais
+         VirtualBox ne relocalise jamais un médium enregistré tout seul. Un `unregistervm
+         --delete` classique échouait aussi (même chemin cassé) ; nettoyage manuel via
+         `VBoxManage closemedium` sur le disque parent et son différentiel de snapshot,
+         puis `tests/vm/setup.sh --recreate` (rapide : réutilise l'image cloud déjà
+         téléchargée).
 
 ## Phase 12 — TUI `[Claude, gros morceau]`
 

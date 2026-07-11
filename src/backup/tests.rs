@@ -12,19 +12,6 @@ fn output(code: i32, stdout: &str, stderr: &str) -> Output {
 }
 
 #[test]
-fn resolve_remote_path_remplace_le_tilde() {
-    assert_eq!(
-        resolve_remote_path("~/backups/moi/mcm"),
-        "/home/ngner/backups/moi/mcm"
-    );
-}
-
-#[test]
-fn resolve_remote_path_chemin_absolu_inchange() {
-    assert_eq!(resolve_remote_path("/srv/backups"), "/srv/backups");
-}
-
-#[test]
 fn check_step_ok_sur_exit_zero() {
     let out = output(0, "tout va bien", "");
     assert!(check_step(&out, "étape").is_ok());

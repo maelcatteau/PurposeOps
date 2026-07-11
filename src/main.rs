@@ -4,6 +4,7 @@
 // Dépendances : clap (derive) · serde (derive) · serde_yaml_ng · inquire · anyhow
 
 mod backup;
+mod backup_agent;
 mod bootstrap;
 mod check;
 mod config;
@@ -196,6 +197,10 @@ enum BackupCommand {
         /// Dossier de sortie sur l'hôte cible (défaut : ~/backups/<abréviation>/<host_id>).
         #[arg(long = "output-dir")]
         output_dir: Option<String>,
+        /// Purge les archives au-delà des N plus récentes dans le dossier de sortie
+        /// (aucune purge si omis).
+        #[arg(long = "keep-last")]
+        keep_last: Option<u32>,
     },
     /// Restaure une archive dans le déploiement courant. DESTRUCTIF (DROP DATABASE sur
     /// la cible) : demande confirmation sauf si --force.
@@ -209,6 +214,22 @@ enum BackupCommand {
         /// Ne pas demander de confirmation avant d'écraser la base cible.
         #[arg(long)]
         force: bool,
+    },
+    /// Installe un agent de backup autonome sur l'hôte du déploiement (Phase 11, voir
+    /// PORTING.md) : pousse le binaire `ppo`, une config scopée à ce seul déploiement, et
+    /// une tâche cron locale — pour que les sauvegardes tournent depuis le cron de l'hôte
+    /// du client plutôt que celui du laptop. Capacité nouvelle, aucun équivalent côté nu.
+    #[command(name = "bootstrap-agent")]
+    BootstrapAgent {
+        /// Deployment id (menu fuzzy parmi tous les clients si omis).
+        deployment_id: Option<String>,
+        /// URL ntfy à notifier en cas d'échec d'un backup cron (ex.
+        /// https://ntfy.sh/mon-topic). Omis : pas de notification.
+        #[arg(long = "ntfy-url")]
+        ntfy_url: Option<String>,
+        /// Nombre d'archives à conserver par le cron installé (purge les plus anciennes).
+        #[arg(long = "keep-last", default_value_t = 10)]
+        keep_last: u32,
     },
 }
 
@@ -269,11 +290,14 @@ fn main() -> anyhow::Result<()> {
         Command::DockerPs { filter, ports } => docker::cmd_dps(filter, ports)?,
         Command::DockerNetworkList { filter } => docker::cmd_dnls(filter)?,
 
-        Command::Backup(BackupCommand::Run { cron, output_dir }) => {
-            backup::cmd_backup_run(output_dir, cron)?
+        Command::Backup(BackupCommand::Run { cron, output_dir, keep_last }) => {
+            backup::cmd_backup_run(output_dir, cron, keep_last)?
         }
         Command::Backup(BackupCommand::Restore { backup_file, target_database, force }) => {
             backup::cmd_backup_restore(backup_file, target_database, force)?
+        }
+        Command::Backup(BackupCommand::BootstrapAgent { deployment_id, ntfy_url, keep_last }) => {
+            backup_agent::cmd_backup_bootstrap_agent(deployment_id, ntfy_url, keep_last)?
         }
 
         Command::Completions { shell } => print_completions(shell),

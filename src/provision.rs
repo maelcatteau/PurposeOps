@@ -9,7 +9,9 @@
 //! distante envoyée via la connexion ControlMaster déjà en place (`ssh::run_with_master`),
 //! plutôt que d'ouvrir une connexion `scp` séparée.
 
+use std::io::Write;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use anyhow::{Result, anyhow, bail};
 use base64::Engine;
@@ -21,8 +23,10 @@ use crate::{customer, deployment, docker, ssh, template, ui};
 /// Pousse `content` vers `remote_path` sur `host`. Écriture directe pour `localhost` ;
 /// pour un hôte distant, encode en base64 et l'écrit via une commande shell sur la
 /// connexion ControlMaster existante — il n'y a pas d'autre mécanisme de transfert de
-/// fichier dans ce projet (pas de `scp`/`rsync`).
-fn push_file(host: &Host, remote_path: &str, content: &str) -> Result<()> {
+/// fichier dans ce projet (pas de `scp`/`rsync`). Réutilisé par `backup_agent.rs` pour
+/// pousser les YAML/identité `age` scopés d'un agent de backup (petits fichiers texte,
+/// ce chemin reste adapté ; voir `push_binary` pour un exécutable compilé).
+pub(crate) fn push_file(host: &Host, remote_path: &str, content: &str) -> Result<()> {
     if let Some(parent) = Path::new(remote_path).parent() {
         let parent = parent.display();
         ssh::exec_shell_checked(host, &format!("mkdir -p '{parent}'"), "création du dossier parent")?;
@@ -35,7 +39,76 @@ fn push_file(host: &Host, remote_path: &str, content: &str) -> Result<()> {
 
     let encoded = BASE64.encode(content.as_bytes());
     let cmd = format!("echo '{encoded}' | base64 -d > '{remote_path}'");
-    ssh::exec_shell_checked(host, &cmd, "envoi du docker-compose.yml")?;
+    ssh::exec_shell_checked(host, &cmd, "envoi du fichier")?;
+    Ok(())
+}
+
+/// Taille de bloc pour `push_binary`, en octets bruts (avant expansion base64 ~1.37x).
+/// Linux plafonne un unique argument/variable d'environnement à `MAX_ARG_STRLEN`
+/// (`32 * PAGE_SIZE` = 128 KiB), indépendamment du plus grand `ARG_MAX` (2 MiB) qui limite
+/// la somme argv+envp — c'est cette première limite, sur UNE SEULE chaîne contiguë, que le
+/// `echo '<b64>' | base64 -d > path` de `push_file` heurterait sur un exécutable de
+/// plusieurs Mo (mesuré : ~4.8 Mo une fois strippé, encodé ça dépasserait 6 Mo en un seul
+/// argument). 64 KiB bruts (~87 KiB encodés + habillage shell) laisse une marge confortable
+/// sous ce plafond. Valeur de départ dérivée du calcul de la contrainte, pas encore
+/// validée en conditions réelles contre un VPS distant (voir PORTING.md Phase 11.2).
+const BINARY_CHUNK_SIZE: usize = 64 * 1024;
+
+fn sha256_hex(bytes: &[u8]) -> Result<String> {
+    let mut child = Command::new("sha256sum").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+    child.stdin.take().expect("stdin piped").write_all(bytes)?;
+    let output = child.wait_with_output()?;
+    let out = String::from_utf8_lossy(&output.stdout);
+    out.split_whitespace()
+        .next()
+        .map(str::to_string)
+        .ok_or_else(|| anyhow!("sortie de sha256sum inattendue : {out}"))
+}
+
+/// Pousse un exécutable compilé (`bytes`) vers `remote_path` sur `host`. Contrairement à
+/// `push_file` (pensé pour de petits fichiers texte), envoie par blocs successifs
+/// (`BINARY_CHUNK_SIZE`) plutôt qu'en une seule commande — voir sa doc pour la contrainte
+/// Linux exacte que ça contourne. Vérifie l'intégrité par `sha256sum` une fois le transfert
+/// terminé (évite d'ajouter une dépendance `sha2` pour un seul usage de vérification,
+/// même principe que `local_timestamp()` s'appuyant sur `date`).
+pub(crate) fn push_binary(host: &Host, remote_path: &str, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = Path::new(remote_path).parent() {
+        let parent = parent.display();
+        ssh::exec_shell_checked(host, &format!("mkdir -p '{parent}'"), "création du dossier parent")?;
+    }
+
+    if host.hostname == "localhost" {
+        std::fs::write(remote_path, bytes)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(remote_path, std::fs::Permissions::from_mode(0o755))?;
+        }
+        return Ok(());
+    }
+
+    // Purge un envoi précédent éventuellement interrompu : les blocs suivants
+    // s'ajoutent (`>>`), un fichier partiel laissé en place corromprait le résultat.
+    ssh::exec_shell_checked(host, &format!("rm -f '{remote_path}'"), "nettoyage d'un envoi précédent")?;
+
+    let total_chunks = bytes.len().div_ceil(BINARY_CHUNK_SIZE).max(1);
+    for (i, chunk) in bytes.chunks(BINARY_CHUNK_SIZE).enumerate() {
+        let encoded = BASE64.encode(chunk);
+        let cmd = format!("echo '{encoded}' | base64 -d >> '{remote_path}'");
+        ssh::exec_shell_checked(host, &cmd, &format!("envoi du binaire (bloc {}/{total_chunks})", i + 1))?;
+    }
+
+    let local_hash = sha256_hex(bytes)?;
+    let remote_check = ssh::exec_shell(host, &format!("sha256sum '{remote_path}'"))?;
+    let remote_out = String::from_utf8_lossy(&remote_check.stdout);
+    let remote_hash = remote_out.split_whitespace().next().unwrap_or("");
+    if remote_hash != local_hash {
+        bail!(
+            "Intégrité du transfert échouée pour '{remote_path}' : attendu {local_hash}, obtenu '{remote_hash}'"
+        );
+    }
+
+    ssh::exec_shell_checked(host, &format!("chmod +x '{remote_path}'"), "chmod +x du binaire")?;
     Ok(())
 }
 

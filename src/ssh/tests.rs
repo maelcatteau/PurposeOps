@@ -30,6 +30,21 @@ fn resolve_key_path_absolu_inchange() {
 }
 
 #[test]
+fn resolve_remote_path_remplace_le_tilde() {
+    assert_eq!(resolve_remote_path("~/backups/moi/mcm", "ngner"), "/home/ngner/backups/moi/mcm");
+}
+
+#[test]
+fn resolve_remote_path_utilise_l_utilisateur_donne() {
+    assert_eq!(resolve_remote_path("~/backups/moi/mcm", "ppo"), "/home/ppo/backups/moi/mcm");
+}
+
+#[test]
+fn resolve_remote_path_chemin_absolu_inchange() {
+    assert_eq!(resolve_remote_path("/srv/backups", "ngner"), "/srv/backups");
+}
+
+#[test]
 fn resolve_key_path_vide_inchange() {
     assert_eq!(resolve_key_path(""), "");
 }

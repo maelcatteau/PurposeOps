@@ -40,6 +40,18 @@ fn customer_key_path(customer: &str) -> PathBuf {
     keys_dir().join(format!("{customer}.txt"))
 }
 
+/// Identité dédiée à un déploiement précis (`agent-<deployment_id>.txt`), distincte de
+/// l'identité du client — voir Phase 11.3 dans PORTING.md : un agent de backup poussé sur
+/// l'hôte d'un déploiement ne reçoit que cette identité, pas celle du client (qui
+/// déchiffrerait tous ses secrets, sur tout le parc). Préfixe `agent-` pour ne jamais
+/// collisionner avec un nom de client.
+/// `pub(crate)`, contrairement à `customer_key_path` : `backup_agent.rs` a besoin du
+/// chemin lui-même (pas seulement de l'identité chargée) pour lire le fichier généré et
+/// en pousser le contenu tel quel vers l'hôte distant.
+pub(crate) fn agent_identity_path(deployment_id: &str) -> PathBuf {
+    keys_dir().join(format!("agent-{deployment_id}.txt"))
+}
+
 /// Charge la clé d'un client si elle existe déjà sur cette machine, sinon `None`.
 pub fn load_customer_identity(customer: &str) -> Result<Option<Identity>> {
     let path = customer_key_path(customer);
@@ -57,6 +69,20 @@ pub fn load_or_generate_customer_identity(customer: &str) -> Result<Identity> {
     }
     let identity = Identity::generate();
     save_identity_file(&identity, &customer_key_path(customer))?;
+    Ok(identity)
+}
+
+/// Même mécanique que `load_or_generate_customer_identity`, pour l'identité scopée d'un
+/// agent de backup. `load_all_local_identities` n'a besoin d'aucun changement : elle
+/// charge déjà tout fichier `.txt` de `~/.config/ppo/keys/` quel que soit son nom, donc
+/// une identité d'agent est prise en compte par `reveal()` dès qu'elle est présente.
+pub fn load_or_generate_agent_identity(deployment_id: &str) -> Result<Identity> {
+    let path = agent_identity_path(deployment_id);
+    if path.exists() {
+        return load_identity_file(&path);
+    }
+    let identity = Identity::generate();
+    save_identity_file(&identity, &path)?;
     Ok(identity)
 }
 

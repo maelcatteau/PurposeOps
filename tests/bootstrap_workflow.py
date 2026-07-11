@@ -42,7 +42,7 @@ import pexpect
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PPO_BIN = os.environ.get("PPO_BIN", os.path.join(REPO_ROOT, "target", "debug", "ppo"))
-CONFIG_DIR = os.path.join(os.path.dirname(REPO_ROOT), "PurposeOps-config")
+CONFIG_DIR = os.path.join(REPO_ROOT, "PurposeOps-config")
 
 VM_DIR = os.path.join(REPO_ROOT, "tests", "vm")
 VMCTL = os.path.join(VM_DIR, "vmctl.sh")

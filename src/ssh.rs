@@ -57,6 +57,23 @@ pub fn resolve_key_path(identity_file: &str) -> String {
     }
 }
 
+/// Le nu remplace en dur `~` par le home de l'utilisateur SSH DISTANT (pas celui du
+/// laptop, à l'inverse de `resolve_key_path` ci-dessus) : un `~/...` entre quotes simples
+/// dans une commande shell distante n'est de toute façon jamais tilde-expansé par le
+/// shell — voir la note dans CLAUDE.md. Dérivé de `user` (`/home/<user>`) plutôt que codé
+/// en dur : ça a longtemps été correct en dur (`/home/ngner`) uniquement parce que
+/// l'utilisateur SSH de chaque hôte du parc était justement `ngner` partout — un vrai bug
+/// trouvé en écrivant `tests/backup_agent_workflow.py` contre la VM de test (utilisateur
+/// `ppo`, pas `ngner`) a confirmé que l'hypothèse ne tenait pas dès qu'un hôte a un
+/// utilisateur différent. Partagée entre `backup.rs` et `backup_agent.rs`.
+pub(crate) fn remote_home(user: &str) -> String {
+    format!("/home/{user}")
+}
+
+pub(crate) fn resolve_remote_path(path: &str, user: &str) -> String {
+    path.replace('~', &remote_home(user))
+}
+
 fn key_cache_dir() -> PathBuf {
     let home = std::env::var("HOME").expect("$HOME non défini");
     PathBuf::from(home).join(".cache/ppo/keys")

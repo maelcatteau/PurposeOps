@@ -22,16 +22,8 @@ use std::process::{Command, Output};
 use anyhow::{Context as _, Result, anyhow, bail};
 
 use crate::config::{self, Host};
+use crate::ssh::resolve_remote_path;
 use crate::{customer, deployment, docker, secrets, ssh, ui};
-
-/// Le nu remplace en dur `~` par le home de l'utilisateur SSH distant (pas celui du
-/// laptop) : un `~/...` entre quotes simples dans une commande shell distante n'est de
-/// toute façon jamais tilde-expansé par le shell. Voir la note dans CLAUDE.md.
-const REMOTE_HOME: &str = "/home/ngner";
-
-fn resolve_remote_path(path: &str) -> String {
-    path.replace('~', REMOTE_HOME)
-}
 
 fn stdout_str(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
@@ -108,8 +100,25 @@ fn local_timestamp() -> Result<String> {
     Ok(String::from_utf8(output.stdout)?.trim().to_string())
 }
 
-/// `backup run` — sauvegarde le déploiement courant (dump SQL + filestore) vers l'hôte cible.
-pub fn cmd_backup_run(output_dir: Option<String>, cron: bool) -> Result<()> {
+/// `backup run` — sauvegarde le déploiement courant (dump SQL + filestore) vers l'hôte
+/// cible. Enveloppe fine autour de `run_backup_for_current_deployment` : c'est ici, pas à
+/// l'intérieur, que la notification ntfy d'échec est déclenchée (`--cron` uniquement), pour
+/// couvrir aussi les erreurs de pré-vol (client/déploiement introuvable, credentials
+/// illisibles...), pas seulement celles de `do_generic_backup` — sur un agent scopé à un
+/// seul déploiement, n'importe quelle erreur de ce chemin mérite une alerte.
+pub fn cmd_backup_run(output_dir: Option<String>, cron: bool, keep_last: Option<u32>) -> Result<()> {
+    let result = run_backup_for_current_deployment(output_dir, cron, keep_last);
+    if cron && let Err(e) = &result {
+        notify_failure(e);
+    }
+    result
+}
+
+fn run_backup_for_current_deployment(
+    output_dir: Option<String>,
+    cron: bool,
+    keep_last: Option<u32>,
+) -> Result<()> {
     let (customer_name, _) =
         customer::get_current_customer()?.ok_or_else(|| anyhow!("❌ Aucun client sélectionné."))?;
     let customers = config::load_customers()?;
@@ -175,7 +184,27 @@ pub fn cmd_backup_run(output_dir: Option<String>, cron: bool) -> Result<()> {
         &db_password,
         &final_output_dir,
         cron,
+        keep_last,
     )
+}
+
+/// Notifie `NTFY_URL` (variable d'environnement — absente = pas de notification, un run
+/// interactif manuel sur le laptop n'a pas besoin d'une alerte push) d'un échec de
+/// `backup run --cron`. Best-effort, ne masque jamais l'erreur d'origine ni son code de
+/// sortie. Voir la décision de conception dans PORTING.md Phase 11.5 : gérée ici plutôt
+/// qu'en `curl || ...` sur la ligne cron, pour garder le détail de l'étape qui a échoué
+/// (`anyhow::Error` le porte déjà) plutôt qu'un simple "code de sortie non nul".
+fn notify_failure(err: &anyhow::Error) {
+    let Ok(url) = std::env::var("NTFY_URL") else {
+        return;
+    };
+    let message = format!("ppo backup run --cron a échoué : {err}");
+    if let Err(e) = Command::new("curl")
+        .args(["-fsS", "--max-time", "10", "-H", "Title: ppo backup failed", "-d", &message, &url])
+        .output()
+    {
+        println!("⚠️  Échec de l'envoi de la notification ntfy : {e}");
+    }
 }
 
 /// Moteur interne : dump SQL + filestore, archive, rapatriement sur l'hôte, nettoyage.
@@ -192,12 +221,13 @@ fn do_generic_backup(
     db_password: &str,
     output_dir: &str,
     cron: bool,
+    keep_last: Option<u32>,
 ) -> Result<()> {
     let ts = local_timestamp()?;
     let prefix = if cron { "cron" } else { "manual" };
     let fname = format!("{prefix}_{database}_{ts}");
     let tmp = "/tmp";
-    let clean_output_dir = resolve_remote_path(output_dir);
+    let clean_output_dir = resolve_remote_path(output_dir, &host.user);
     let remote_dest = format!("{clean_output_dir}/{fname}.tar.gz");
     let sql_tmp = format!("{tmp}/{fname}.sql");
     let fs_tar = format!("{tmp}/{fname}_fs.tar.gz");
@@ -229,8 +259,33 @@ fn do_generic_backup(
             host,
         );
         let _ = exec_remote_shell(&format!("rm -f '{sql_tmp}'"), host);
+    } else if let Some(keep) = keep_last {
+        // Best-effort : une purge ratée n'invalide pas un backup par ailleurs réussi, et
+        // ne déclenche donc pas la notification d'échec (le backup, lui, a réussi).
+        if let Err(e) = purge_old_backups(&clean_output_dir, host, keep) {
+            println!("⚠️  Échec de la purge des anciennes sauvegardes : {e}");
+        }
     }
     result
+}
+
+/// Noms de fichiers à supprimer parmi `all_newest_first` (déjà triés du plus récent au
+/// plus ancien, comme le renvoie `list_remote_backups`) pour n'en garder que `keep`.
+fn backups_to_purge(all_newest_first: Vec<String>, keep: u32) -> Vec<String> {
+    all_newest_first.into_iter().skip(keep as usize).collect()
+}
+
+fn purge_old_backups(dir: &str, host: &Host, keep: u32) -> Result<()> {
+    let all = list_remote_backups(dir, host)?;
+    let to_remove = backups_to_purge(all, keep);
+    if to_remove.is_empty() {
+        return Ok(());
+    }
+    println!("🧹 Purge de {} ancienne(s) sauvegarde(s)...", to_remove.len());
+    for name in &to_remove {
+        let _ = exec_remote_shell(&format!("rm -f '{dir}/{name}'"), host);
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -398,7 +453,7 @@ pub fn cmd_backup_restore(
             if abbrev.is_empty() {
                 bail!("Abréviation client manquante, impossible de lister les backups.");
             }
-            let backup_dir = resolve_remote_path(&format!("~/backups/{abbrev}/{host_id}"));
+            let backup_dir = resolve_remote_path(&format!("~/backups/{abbrev}/{host_id}"), &host.user);
             println!("🔎 Recherche des backups disponibles ({backup_dir})...");
             let available = list_remote_backups(&backup_dir, host)?;
             if available.is_empty() {
@@ -418,12 +473,12 @@ pub fn cmd_backup_restore(
     // un chemin absolu est utilisé tel quel, sinon on le cherche dans le dossier de
     // backup habituel du client courant.
     let backup_path = if backup_file.starts_with('/') || backup_file.starts_with('~') {
-        resolve_remote_path(&backup_file)
+        resolve_remote_path(&backup_file, &host.user)
     } else {
         if abbrev.is_empty() {
             bail!("Abréviation client manquante et chemin de backup non-absolu fourni.");
         }
-        resolve_remote_path(&format!("~/backups/{abbrev}/{host_id}/{backup_file}"))
+        resolve_remote_path(&format!("~/backups/{abbrev}/{host_id}/{backup_file}"), &host.user)
     };
 
     println!("🔄 RESTAURATION ODOO");
