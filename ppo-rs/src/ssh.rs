@@ -12,6 +12,10 @@
 // couvertes par le test live #[ignore]. À retirer quand Docker les consomme.
 #![allow(dead_code)]
 
+use std::fs::OpenOptions;
+use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::thread::sleep;
@@ -20,6 +24,7 @@ use std::time::Duration;
 use anyhow::{Result, bail};
 
 use crate::config::Host;
+use crate::secrets;
 
 fn control_path() -> PathBuf {
     let home = std::env::var("HOME").expect("$HOME non défini");
@@ -52,6 +57,60 @@ pub fn resolve_key_path(identity_file: &str) -> String {
     }
 }
 
+fn key_cache_dir() -> PathBuf {
+    let home = std::env::var("HOME").expect("$HOME non défini");
+    PathBuf::from(home).join(".cache/ppo/keys")
+}
+
+/// Déchiffre `host.identity_key` et l'écrit dans un fichier `0600` en cache local
+/// (recréé à chaque appel — le déchiffrement `age` est de l'ordre de la microseconde,
+/// pas la peine de gérer un cache invalidable). Un nom de fichier stable par hôte évite
+/// l'accumulation de fichiers temporaires.
+fn materialize_identity_key(host: &Host, encrypted: &str) -> Result<String> {
+    let plaintext = secrets::reveal(encrypted)?;
+
+    let dir = key_cache_dir();
+    std::fs::create_dir_all(&dir)?;
+    let sanitized: String = host
+        .name
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+    let path = dir.join(sanitized);
+
+    let mut opts = OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    opts.mode(0o600);
+    let mut file = opts.open(&path)?;
+    file.write_all(plaintext.as_bytes())?;
+
+    Ok(path.display().to_string())
+}
+
+/// Chemin de la clé SSH à utiliser pour cet hôte : `identity_key` (déchiffré et
+/// matérialisé) si présent et déchiffrable localement, sinon repli sur `identity_file`.
+/// Un échec de déchiffrement de `identity_key` n'est qu'un avertissement — il ne doit
+/// jamais bloquer une commande SSH qui aurait pu passer via `identity_file`.
+fn resolved_identity_path(host: &Host) -> Option<String> {
+    if let Some(encrypted) = &host.identity_key {
+        match materialize_identity_key(host, encrypted) {
+            Ok(path) => return Some(path),
+            Err(e) => {
+                eprintln!(
+                    "⚠️  identity_key illisible pour '{}' ({e}), repli sur identity_file",
+                    host.name
+                );
+            }
+        }
+    }
+    if host.identity_file.is_empty() {
+        None
+    } else {
+        Some(resolve_key_path(&host.identity_file))
+    }
+}
+
 /// Options communes `-S socket -p port -o ... [-i key]`, sans la cible.
 fn common_args(socket: &std::path::Path, host: &Host) -> Vec<String> {
     let mut args = vec![
@@ -64,9 +123,9 @@ fn common_args(socket: &std::path::Path, host: &Host) -> Vec<String> {
         "-o".to_string(),
         "ConnectTimeout=10".to_string(),
     ];
-    if !host.identity_file.is_empty() {
+    if let Some(path) = resolved_identity_path(host) {
         args.push("-i".to_string());
-        args.push(resolve_key_path(&host.identity_file));
+        args.push(path);
     }
     args
 }

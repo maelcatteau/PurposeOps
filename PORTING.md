@@ -481,11 +481,43 @@ le schéma de clés est étendu pour rendre la config **auto-portable** :
       ne peut déchiffrer cette valeur`) sans toucher `pdei`/`lsc` ; le remettre en place
       restaure le fonctionnement normal. 2 tests unitaires ajoutés pour le round-trip du
       champ `identity_key` (`config/tests.rs`) ; `cargo test` : 46/47 verts.
-- [ ] **8.3** `[Claude]` Calcul des destinataires : `cdep` (re)chiffre `identity_key` de
+- [x] **8.3** `[Claude]` Calcul des destinataires : `cdep` (re)chiffre `identity_key` de
       l'hôte visé pour inclure la clé publique du client, en plus des clés déjà
       présentes ; génère la clé du client si elle n'existe pas encore.
       *Fait quand* : deux clients partageant un hôte déchiffrent chacun sa clé SSH avec
       leur propre fichier de clé, indépendamment l'un de l'autre.
+
+      **Fait** : `ensure_host_key_encrypted` (`deployment.rs`), appelée à la fin de
+      `cdep` après l'ajout du déploiement. Recalcule l'ensemble cible depuis
+      `customers.yaml` (l'union des clients ayant réellement un **déploiement** sur cet
+      hôte — pas `customer.hosts`, une déclaration plus lâche qui n'implique pas un accès
+      secret réel), obtient le contenu en clair de la clé (déchiffre `identity_key`
+      existant si déjà présent, sinon lit `identity_file` sur la machine locale la
+      première fois), puis rechiffre pour l'ensemble complet. Best-effort et jamais
+      fatal pour `cdep` : hôte sans clé lisible localement (ex. `localhost`) ignoré
+      silencieusement, `identity_key` existant mais indéchiffrable avec les identités
+      locales disponibles → avertissement, pas d'erreur bloquante.
+
+      Câblage `ssh.rs` (consommation du champ, en même temps que ce qui le peuple pour
+      la première fois) : `resolved_identity_path` préfère `identity_key` (déchiffré via
+      `secrets::reveal`, matérialisé dans un fichier `0600` sous `~/.cache/ppo/keys/`,
+      recréé à chaque appel — le déchiffrement `age` est de l'ordre de la microseconde)
+      et se replie sur `identity_file` en cas d'absence ou d'échec de déchiffrement
+      (jamais fatal pour la commande SSH en cours).
+
+      Vérifié en live sur `mcm` (hôte réel, production) : client scratch `SSHKeyTest`
+      lié à `mcm` via `cdep` → message `🔐 Clé SSH de 'mcm' chiffrée pour 2 client(s) :
+      Mael, SSHKeyTest` (Multibikes, qui référence `mcm` seulement via `customer.hosts`
+      avec `deployments: []`, exclu comme attendu) ; clés générées pour Mael et
+      SSHKeyTest en `0600` ; déchiffrement avec **chacune** des deux identités
+      indépendamment → contenu identique aux 387 octets réels de `/etc/ssh/mcm`.
+      `closeall` puis `ppo dps` (aucune connexion maître existante, authentification
+      forcément fraîche) → connexion SSH réelle réussie ; fichier matérialisé
+      `~/.cache/ppo/keys/vps_mcm` en `0600`, contenu **octet-identique** à `/etc/ssh/mcm`.
+      `hosts.yaml`/`customers.yaml`/`context.yaml` restaurés à l'identique après coup
+      (`identity_key` de `mcm` remis à absent — la migration définitive attend 8.4,
+      volontairement : ce test valide le mécanisme, il ne doit pas être celui qui chiffre
+      `mcm` en prod comme effet de bord).
 - [ ] **8.4** `[Claude]` `ppo secrets encrypt` : migration en place de la config réelle
       (génère les clés clients manquantes, chiffre `identity_file`→`identity_key` et
       `db_credentials.password`, réécrit les YAML).

@@ -159,6 +159,90 @@ fn deployment_id_exists(deployment_id: &str, customers: &BTreeMap<String, Custom
         .any(|c| c.deployments.iter().any(|d| d.deployment_id == deployment_id))
 }
 
+/// (Re)chiffre `identity_key` de `host_id` pour l'union des clients ayant désormais un
+/// déploiement dessus (`customers` doit déjà refléter le nouveau déploiement). Best-effort
+/// et jamais fatal pour `cdep` : un hôte sans `identity_file` lisible localement (ex :
+/// `localhost`, ou `cdep` lancé sur une machine qui n'a pas cette clé) est ignoré
+/// silencieusement, un `identity_key` déjà présent mais indéchiffrable avec les identités
+/// locales disponibles se contente d'un avertissement. Retourne `true` si `hosts` a été
+/// modifié (à sauvegarder par l'appelant).
+fn ensure_host_key_encrypted(
+    host_id: &str,
+    hosts: &mut BTreeMap<String, config::Host>,
+    customers: &BTreeMap<String, Customer>,
+) -> bool {
+    let Some(host) = hosts.get(host_id) else {
+        return false;
+    };
+
+    let plaintext_key = match &host.identity_key {
+        Some(encrypted) => match secrets::reveal(encrypted) {
+            Ok(pt) => pt,
+            Err(e) => {
+                println!(
+                    "⚠️  Clé SSH de '{host_id}' déjà chiffrée mais illisible avec les clés locales disponibles ({e}) — non mise à jour."
+                );
+                return false;
+            }
+        },
+        None => {
+            if host.identity_file.is_empty() {
+                return false;
+            }
+            let path = crate::ssh::resolve_key_path(&host.identity_file);
+            match std::fs::read_to_string(&path) {
+                Ok(content) => content,
+                Err(_) => return false,
+            }
+        }
+    };
+
+    let recipient_customers: Vec<&String> = customers
+        .iter()
+        .filter(|(_, c)| {
+            c.deployments
+                .iter()
+                .any(|d| d.hosts.iter().any(|h| h.host_id == host_id))
+        })
+        .map(|(name, _)| name)
+        .collect();
+
+    if recipient_customers.is_empty() {
+        return false;
+    }
+
+    let mut recipients = Vec::new();
+    for name in &recipient_customers {
+        match secrets::load_or_generate_customer_identity(name) {
+            Ok(identity) => recipients.push(identity.to_public()),
+            Err(e) => {
+                println!("⚠️  Impossible de charger/générer la clé de '{name}' : {e}");
+                return false;
+            }
+        }
+    }
+
+    match secrets::encrypt_secret(&plaintext_key, &recipients) {
+        Ok(encrypted) => {
+            hosts.get_mut(host_id).expect("vérifié ci-dessus").identity_key = Some(encrypted);
+            println!(
+                "🔐 Clé SSH de '{host_id}' chiffrée pour {} client(s) : {}",
+                recipient_customers.len(),
+                recipient_customers
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            true
+        }
+        Err(e) => {
+            println!("⚠️  Échec du chiffrement de la clé SSH de '{host_id}' : {e}");
+            false
+        }
+    }
+}
+
 /// `cdep` (create_deployment) — pour le client courant : wizard interactif, validation
 /// host + unicité globale de l'id, champs DB optionnels, aperçu YAML, confirmation,
 /// append dans `customers.yaml`. Port de `deployment-manager/core.nu`'s `create_deployment`.
@@ -166,7 +250,7 @@ pub fn cmd_cdep() -> Result<()> {
     let (customer_name, _) = customer::get_current_customer()?
         .ok_or_else(|| anyhow!("Aucun client sélectionné. Utilisez 'sc <client>' d'abord."))?;
 
-    let hosts = config::load_hosts()?;
+    let mut hosts = config::load_hosts()?;
     println!("📍 Création d'un déploiement pour : {customer_name}");
 
     let Some(service_name) = ui::text("Service name (ex: Odoo CE, Vaultwarden): ") else {
@@ -201,7 +285,7 @@ pub fn cmd_cdep() -> Result<()> {
     let mut new_deployment = Deployment {
         service_name,
         hosts: vec![DeploymentHost {
-            host_id,
+            host_id: host_id.clone(),
             path_for_service,
             path_for_docker_compose,
         }],
@@ -264,6 +348,10 @@ pub fn cmd_cdep() -> Result<()> {
         .ok_or_else(|| anyhow!("Client '{customer_name}' introuvable"))?;
     cust.deployments.push(new_deployment);
     config::save_yaml_map(&config::customers_config_path(), &customers)?;
+
+    if ensure_host_key_encrypted(&host_id, &mut hosts, &customers) {
+        config::save_yaml_map(&config::hosts_config_path(), &hosts)?;
+    }
 
     println!("✅ Déploiement '{deployment_id}' créé pour '{customer_name}'");
     Ok(())
