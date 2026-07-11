@@ -50,11 +50,16 @@ module still exists in the repo as a reference/fallback but is no longer loaded 
   beyond the one script below.
 - **`ppo-rs/tests/integration_workflow.py`**: a `pexpect`-driven live integration test covering the
   full lifecycle — create host/customer/deployment, `backup run`, simulate data loss, `backup
-  restore`, verify, then delete everything. Not a `cargo test` target (interactive wizards need a
-  real PTY); run directly with `python3 tests/integration_workflow.py`. Requires the local
-  `odoo-demo`/`odoo-demo-db` Docker containers running (see `~/dev/demo-odoo/docker-compose.yml`).
-  Snapshots and restores `PurposeOps-config/*.yaml` around itself and cleans up scratch objects
-  even on failure — safe to run against the real config.
+  restore`, verify, `ddep`, then delete the customer/host. Not a `cargo test` target (interactive
+  wizards need a real PTY); run directly with `python3 tests/integration_workflow.py`. Requires the
+  local `odoo-demo`/`odoo-demo-db` Docker containers running (see
+  `~/dev/demo-odoo/docker-compose.yml`). Snapshots and restores `PurposeOps-config/*.yaml` around
+  itself and cleans up scratch objects even on failure — safe to run against the real config.
+  **Keep this test current**: whenever a change touches a command it exercises (`ch`/`cc`/`cdep`/
+  `ddep`/`dc`/`dh`, `backup run`/`backup restore`, or anything upstream those depend on — config
+  schema, `secrets.rs`, `ssh.rs`), update the script alongside the change, and run it (`cargo test`
+  too) before considering the work done — the same way `cargo test`/`cargo clippy` already get run
+  as a matter of course. Treat it as part of the verification pass, not an optional extra.
 
 ## Architecture
 

@@ -18,12 +18,13 @@ What it does, against real PurposeOps-config and the local `odoo-demo`/
   7. Drop the marker table (simulate data loss).
   8. backup restore --force: restore from the archive just created.
   9. Verify the marker row is back with the correct value.
-  10. dc / dh: delete the scratch customer (cascades to its deployment) and host.
-  11. Restore hosts.yaml/customers.yaml/context.yaml byte-for-byte, drop
+  10. ddep: delete the deployment directly (not via customer cascade).
+  11. dc / dh: delete the now deployment-less scratch customer and host.
+  12. Restore hosts.yaml/customers.yaml/context.yaml byte-for-byte, drop
       inttest_db, remove the scratch customer's generated age key, remove the
       backup archive(s) created on disk.
 
-Cleanup (step 11) always runs, even on failure, so a crashed run doesn't leave
+Cleanup (step 12) always runs, even on failure, so a crashed run doesn't leave
 scratch state behind. Exit code 0 = pass, 1 = fail.
 
 Usage: python3 tests/integration_workflow.py
@@ -258,6 +259,23 @@ def verify_restored():
     print(f"ok: marker value = {out!r}")
 
 
+def delete_deployment():
+    step(f"ddep: delete deployment '{DEPLOYMENT_ID}'")
+    child = spawn(f"ddep {DEPLOYMENT_ID}")
+    child.expect("Delete")
+    child.sendline("y")
+    child.expect(pexpect.EOF)
+    child.close()
+    assert child.exitstatus == 0, "ddep failed"
+
+    result = run([PPO_BIN, "lsd"], cwd=REPO_ROOT)
+    assert DEPLOYMENT_ID not in result.stdout, "deployment still listed after ddep"
+
+    result = run([PPO_BIN, "pdei"], cwd=REPO_ROOT, check=False)
+    assert result.returncode != 0, "pdei should fail once the active deployment is deleted"
+    print("ok: deployment gone from lsd, context cleared")
+
+
 def delete_customer():
     step(f"dc: delete customer '{CUSTOMER}'")
     child = spawn("dc")
@@ -319,6 +337,7 @@ def main():
         sabotage()
         backup_restore(archive)
         verify_restored()
+        delete_deployment()
         delete_customer()
         delete_host()
         print(f"\n{PASS}: full workflow succeeded")
