@@ -23,7 +23,7 @@ jobs:
       run:
         working-directory: ppo-rs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -41,3 +41,14 @@ jobs:
 
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "### :white_check_mark: build, test, and clippy all passed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### :x: one or more checks failed — see the step logs above" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Live tests (integration_workflow.py, bootstrap_workflow.py) are local-only and not run in CI — see README.md." >> "$GITHUB_STEP_SUMMARY"
