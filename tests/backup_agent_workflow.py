@@ -61,6 +61,10 @@ HOST_ID = "backup-agent-test-vm"
 CUSTOMER = "BackupAgentTest"
 ABBREV = "bat"
 DEPLOYMENT_ID = "backup-agent-test-dep"
+# Backups now live under the deployment's own path_for_service (see PORTING.md), not a
+# centralized ~/backups/<abbrev>/<host_id> tree — this must match what create_deployment()
+# actually sends for "Path for service on host".
+PATH_FOR_SERVICE = "/home/ppo"
 
 DB_CONTAINER = "agent-test-db"
 APP_CONTAINER = "agent-test-app"
@@ -244,7 +248,7 @@ def create_deployment():
     child.expect("Host ID")
     child.sendline(HOST_ID)
     child.expect("Path for service on host")
-    child.sendline("/home/ppo")
+    child.sendline(PATH_FOR_SERVICE)
     child.expect("Path for docker-compose file")
     child.sendline("/home/ppo/docker-compose.yml")
     child.expect("Deployment id")
@@ -335,7 +339,7 @@ def trigger_backup_run(expect_success):
 def verify_backup_archive_exists():
     step("Triggering backup run --cron over SSH and checking for an archive")
     trigger_backup_run(expect_success=True)
-    out = vm_ssh(f"ls -1 /home/ppo/backups/{ABBREV}/{HOST_ID}/*.tar.gz").stdout
+    out = vm_ssh(f"ls -1 {PATH_FOR_SERVICE}/backups/*.tar.gz").stdout
     assert out.strip(), "no backup archive found after backup run --cron"
     print(f"ok: archive present ({out.strip().splitlines()[-1]})")
 

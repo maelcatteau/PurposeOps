@@ -1115,6 +1115,49 @@ Odoo provisionné via `ppo provision` n'aura pas de sauvegarde configurée autom
 `cdep` reste la voie pour enregistrer les champs DB après coup si une sauvegarde est
 nécessaire.
 
+## Backups : dossier du déploiement plutôt que `~/backups/<abbrev>/<host_id>` `[Claude]`
+
+Hors plan de phases — à la demande explicite du sujet. `cmd_backup_run`/
+`cmd_backup_restore` (`src/backup.rs`) construisaient par défaut un chemin centralisé,
+dérivé de l'abréviation du client et de l'id d'hôte (`~/backups/{abbrev}/{host_id}`),
+indépendant de l'endroit où le déploiement lui-même vit sur l'hôte. Remplacé par
+`{path_for_service}/backups` — `path_for_service` vient du déploiement lui-même
+(`Deployment.hosts[].path_for_service`, déjà résolu pour retrouver `host_id`), pas du
+client (`Customer.hosts[].path_on_host`, le dossier PARENT partagé par tous les services
+d'un client sur un hôte donné — les deux ne coïncident pas toujours, ex. Cocotte a
+`path_on_host: .../cocotte/` mais `path_for_service: .../cocotte/vw-cocotte/` pour son
+déploiement Vaultwarden). Choix délibéré : `path_for_service` est propre à CE déploiement,
+donc sans collision possible si un client a un jour deux services sur le même hôte,
+contrairement à un dossier `backups/` partagé au niveau du client.
+
+`path_for_service` étant toujours un chemin absolu réel dans la config actuelle (jamais
+`~`-préfixé), `resolve_remote_path` n'est plus nécessaire pour construire ce chemin par
+défaut — simplification obtenue en même temps, pas seulement un changement de valeur.
+Effet de bord positif dans `run_backup_for_current_deployment` : la résolution du client
+courant (`customer::get_current_customer`/`config::load_customers`) n'était là que pour
+lire `customer_data.abbreviation` — devenue inutile, supprimée entièrement plutôt que
+laissée en code mort ; `cmd_backup_restore` la garde car `customer_name` sert encore à
+l'affichage ("📋 Client : ..."), mais `customer_data`/`customers` (utilisés uniquement
+pour `.abbreviation`) disparaissent là aussi.
+
+Vérifié en direct sur les deux scripts existants (chemins absolus réalistes dans les
+deux cas, pas de valeurs jouets) : `tests/integration_workflow.py` (backup + restore
+complets contre `odoo-demo`, chemin confirmé `/home/ngner/dev/demo-odoo/backups/...`) et
+`tests/backup_agent_workflow.py` (agent distant sur la VM, chemin confirmé
+`/home/ppo/backups/...`, y compris le chemin d'échec + notification `ntfy`). Round-trip
+manuel contre un vrai déploiement client (`odoo-perso` de Mael) **volontairement pas
+fait** : `backup restore` est destructif (`DROP DATABASE`) et les deux scripts
+ci-dessus vérifient déjà le nouveau chemin avec des valeurs réalistes — un aller-retour
+supplémentaire contre de vraies données de production n'aurait rien prouvé de plus pour
+un risque nettement plus élevé.
+
+**Non construit dans ce changement, noté pour plus tard** : une commande de transfert
+(`ppo backup fetch`, ou équivalent) pour rapatrier une archive depuis le dossier du
+déploiement vers le laptop ou un autre hôte (environnement de staging, par exemple).
+Un vrai manque maintenant que les backups sont dispersés par déploiement plutôt que
+centralisés, mais une fonctionnalité à part entière, pas un sous-produit de ce
+changement de chemin.
+
 ## Phase 12 — TUI `[Claude, gros morceau]`
 
 Surcouche `ratatui` sur le socle CLI (le CLI reste la référence scriptable).

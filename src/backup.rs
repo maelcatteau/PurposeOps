@@ -119,19 +119,9 @@ fn run_backup_for_current_deployment(
     cron: bool,
     keep_last: Option<u32>,
 ) -> Result<()> {
-    let (customer_name, _) =
-        customer::get_current_customer()?.ok_or_else(|| anyhow!("❌ Aucun client sélectionné."))?;
-    let customers = config::load_customers()?;
-    let customer_data = customers
-        .get(&customer_name)
-        .ok_or_else(|| anyhow!("Client '{customer_name}' introuvable"))?;
-
     let dep = deployment::get_current_deployment_info()?;
-    let host_id = dep
-        .hosts
-        .first()
-        .map(|h| h.host_id.clone())
-        .ok_or_else(|| anyhow!("Déploiement sans hôte."))?;
+    let dep_host = dep.hosts.first().ok_or_else(|| anyhow!("Déploiement sans hôte."))?;
+    let host_id = dep_host.host_id.clone();
     let database = dep.database_name.clone().ok_or_else(|| {
         anyhow!("❌ Ce déploiement n'a pas de base de données configurée (database_name manquant).")
     })?;
@@ -163,11 +153,10 @@ fn run_backup_for_current_deployment(
     let final_output_dir = match output_dir.filter(|d| !d.is_empty()) {
         Some(d) => d,
         None => {
-            let abbrev = &customer_data.abbreviation;
-            if abbrev.is_empty() {
-                bail!("Abréviation client manquante.");
+            if dep_host.path_for_service.is_empty() {
+                bail!("path_for_service manquant pour ce déploiement.");
             }
-            format!("~/backups/{abbrev}/{host_id}")
+            format!("{}/backups", dep_host.path_for_service)
         }
     };
 
@@ -402,17 +391,10 @@ pub fn cmd_backup_restore(
 ) -> Result<()> {
     let (customer_name, _) =
         customer::get_current_customer()?.ok_or_else(|| anyhow!("❌ Aucun client sélectionné."))?;
-    let customers = config::load_customers()?;
-    let customer_data = customers
-        .get(&customer_name)
-        .ok_or_else(|| anyhow!("Client '{customer_name}' introuvable"))?;
 
     let dep = deployment::get_current_deployment_info()?;
-    let host_id = dep
-        .hosts
-        .first()
-        .map(|h| h.host_id.clone())
-        .ok_or_else(|| anyhow!("Déploiement sans hôte."))?;
+    let dep_host = dep.hosts.first().ok_or_else(|| anyhow!("Déploiement sans hôte."))?;
+    let host_id = dep_host.host_id.clone();
 
     let hosts = config::load_hosts()?;
     let host = hosts
@@ -445,15 +427,13 @@ pub fn cmd_backup_restore(
         })?,
     };
 
-    let abbrev = customer_data.abbreviation.clone();
-
     let backup_file = match backup_file.filter(|f| !f.is_empty()) {
         Some(f) => f,
         None => {
-            if abbrev.is_empty() {
-                bail!("Abréviation client manquante, impossible de lister les backups.");
+            if dep_host.path_for_service.is_empty() {
+                bail!("path_for_service manquant pour ce déploiement, impossible de lister les backups.");
             }
-            let backup_dir = resolve_remote_path(&format!("~/backups/{abbrev}/{host_id}"), &host.user);
+            let backup_dir = format!("{}/backups", dep_host.path_for_service);
             println!("🔎 Recherche des backups disponibles ({backup_dir})...");
             let available = list_remote_backups(&backup_dir, host)?;
             if available.is_empty() {
@@ -475,10 +455,10 @@ pub fn cmd_backup_restore(
     let backup_path = if backup_file.starts_with('/') || backup_file.starts_with('~') {
         resolve_remote_path(&backup_file, &host.user)
     } else {
-        if abbrev.is_empty() {
-            bail!("Abréviation client manquante et chemin de backup non-absolu fourni.");
+        if dep_host.path_for_service.is_empty() {
+            bail!("path_for_service manquant pour ce déploiement et chemin de backup non-absolu fourni.");
         }
-        resolve_remote_path(&format!("~/backups/{abbrev}/{host_id}/{backup_file}"), &host.user)
+        format!("{}/backups/{backup_file}", dep_host.path_for_service)
     };
 
     println!("🔄 RESTAURATION ODOO");

@@ -194,7 +194,7 @@ enum BackupCommand {
         /// Préfixe `cron_` au lieu de `manual_` dans le nom de l'archive.
         #[arg(long)]
         cron: bool,
-        /// Dossier de sortie sur l'hôte cible (défaut : ~/backups/<abréviation>/<host_id>).
+        /// Dossier de sortie sur l'hôte cible (défaut : <path_for_service du déploiement>/backups).
         #[arg(long = "output-dir")]
         output_dir: Option<String>,
         /// Purge les archives au-delà des N plus récentes dans le dossier de sortie

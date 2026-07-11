@@ -49,6 +49,10 @@ HOST_ID = "inttest-local"
 DEPLOYMENT_ID = "inttest-deploy"
 DB_NAME = "inttest_db"
 MARKER_VALUE = "integration-test-checkpoint"
+# Backups now live under the deployment's own path_for_service (see PORTING.md), not a
+# centralized ~/backups/<abbrev>/<host_id> tree — must match create_deployment()'s
+# "Path for service on host" value.
+PATH_FOR_SERVICE = "/home/ngner/dev/demo-odoo"
 
 PASS = "\033[32mPASS\033[0m"
 FAIL = "\033[31mFAIL\033[0m"
@@ -190,7 +194,7 @@ def create_deployment():
     child.expect("Host ID")
     child.sendline(HOST_ID)
     child.expect("Path for service on host")
-    child.sendline("/home/ngner/dev/demo-odoo")
+    child.sendline(PATH_FOR_SERVICE)
     child.expect("Path for docker-compose file")
     child.sendline("/home/ngner/dev/demo-odoo/docker-compose.yml")
     child.expect("Deployment id")
@@ -313,7 +317,7 @@ def cleanup(snap):
     if os.path.exists(key_path):
         os.remove(key_path)
 
-    backups_dir = os.path.expanduser(f"~/backups/{ABBREV}")
+    backups_dir = os.path.join(PATH_FOR_SERVICE, "backups")
     if os.path.isdir(backups_dir):
         run(["rm", "-rf", backups_dir], check=False)
 
