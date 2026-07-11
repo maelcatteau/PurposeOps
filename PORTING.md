@@ -399,21 +399,60 @@ patterns rodés.
 
 ## Phase 8 — Chiffrement des credentials au repos `[Claude]`
 
-*Débloqué par la bascule (le nu ne lit plus les mots de passe en clair).* Approche :
-chiffrer **uniquement les valeurs** `db_credentials.password` (et tout secret) dans les
-YAML ; clé **hors repo**. Architecture clé : chiffrer/déchiffrer **à la frontière de la
-couche config** (Phase 2) — backup et provisioning ne voient que du clair en mémoire et
-ne touchent jamais à la crypto.
+*Débloqué par la bascule (le nu ne lit plus les mots de passe en clair).*
 
-- [ ] **8.1** `[Claude]` Mécanisme de clé + crate `age` : clé dans `~/.config/ppo/key`
-      (chmod 600) ou trousseau système. `encrypt_secret`/`decrypt_secret` testées
-      unitairement.
-      *Fait quand* : `cargo test` prouve chiffrer→déchiffrer = identité.
-- [ ] **8.2** `[Claude]` `ppor secrets encrypt` : lit les YAML, chiffre les champs
-      sensibles (préfixe marqueur `enc:` pour distinguer clair/chiffré), réécrit. Le
-      loader déchiffre à la volée, le writer rechiffre.
-      *Fait quand* : plus aucun mot de passe en clair dans les YAML, tout marche encore,
-      et retirer la clé fait tout échouer (preuve que ça protège réellement).
+**Décision de design (portabilité)** : `identity_file` est un chemin — copier
+`PurposeOps-config/` sur une autre machine casse le SSH dès que la clé n'existe pas au
+même endroit localement. Plutôt qu'un simple chiffrement de `db_credentials.password`,
+le schéma de clés est étendu pour rendre la config **auto-portable** :
+
+- **Une clé `age` par client** (`~/.config/ppo/keys/<client>.txt`, générée à la demande),
+  pas une seule clé globale. Ça limite la casse si une clé fuit ou est partagée (ex :
+  déléguer un client à un prestataire) — mais ça ne protège pas contre une machine
+  compromise (toutes les clés vivraient dans le même dossier avec les mêmes
+  permissions) ; ça reste un chiffrement **au repos**, pas un coffre-fort applicatif.
+- `db_credentials.password` d'un déploiement → chiffré **uniquement** à la clé de son
+  client (portée la plus étroite possible).
+- Nouveau champ `Host.identity_key` (clé SSH privée chiffrée, en plus de `identity_file`
+  gardé comme repli) → chiffré à **l'union** des clés de tous les clients ayant un
+  déploiement sur cet hôte, car `hosts.yaml` n'est **pas** un mapping 1:1 client↔hôte
+  (`ngner` héberge à la fois Cocotte et Sylvie ; `mcm` héberge à la fois Mael et
+  Multibikes). `age` gère nativement le chiffrement multi-destinataires — un seul
+  ciphertext, plusieurs clés peuvent le déchiffrer.
+- Déchiffrement : essayer chaque identité locale présente dans `~/.config/ppo/keys/`
+  jusqu'à ce qu'une fonctionne ; pas besoin d'indiquer quelle clé a chiffré quoi.
+- Architecture : chiffrer/déchiffrer **à la frontière de la couche config** (Phase 2) —
+  backup et provisioning ne voient que du clair en mémoire, jamais la crypto.
+- Pas de révocation automatique à la suppression d'un client/déploiement (ré-chiffrer
+  pour retirer un destinataire n'efface pas le clair qu'il a déjà pu voir) — juste une
+  recomputation de l'ensemble de destinataires **à la création** d'un lien
+  client↔hôte (`cdep`). Rotation manuelle si un jour nécessaire, hors scope pour l'instant.
+
+- [ ] **8.1** `[Claude]` Mécanisme de clé + crate `age` : génération/chargement d'identités
+      par client (`~/.config/ppo/keys/<client>.txt`, chmod 600), `encrypt_secret`
+      (multi-destinataires) / `decrypt_secret` (essaie chaque identité locale) avec
+      marqueur `enc:` pour distinguer clair/chiffré. Testées unitairement.
+      *Fait quand* : `cargo test` prouve chiffrer→déchiffrer = identité pour un seul
+      destinataire **et** pour plusieurs (n'importe laquelle des identités déchiffre).
+- [ ] **8.2** `[Claude]` Intégration couche config : `Host.identity_key: Option<String>`
+      (repli sur `identity_file` si absent), `DbCredentials.password` déchiffré à la
+      volée au chargement / rechiffré à l'écriture. Un champ chiffré dont aucune identité
+      locale ne peut être déchiffrée ne doit pas casser les commandes qui ne l'utilisent
+      pas (`lsh`/`lsc`/`check`...), seulement échouer proprement quand il est réellement
+      utilisé.
+      *Fait quand* : round-trip préserve les champs chiffrés ; un déploiement dont la
+      clé SSH/DB est illisible localement échoue clairement à l'usage, pas au chargement.
+- [ ] **8.3** `[Claude]` Calcul des destinataires : `cdep` (re)chiffre `identity_key` de
+      l'hôte visé pour inclure la clé publique du client, en plus des clés déjà
+      présentes ; génère la clé du client si elle n'existe pas encore.
+      *Fait quand* : deux clients partageant un hôte déchiffrent chacun sa clé SSH avec
+      leur propre fichier de clé, indépendamment l'un de l'autre.
+- [ ] **8.4** `[Claude]` `ppo secrets encrypt` : migration en place de la config réelle
+      (génère les clés clients manquantes, chiffre `identity_file`→`identity_key` et
+      `db_credentials.password`, réécrit les YAML).
+      *Fait quand* : plus aucun secret en clair dans `PurposeOps-config/` ; retirer le
+      fichier de clé d'un client fait échouer exactement (et seulement) ce qui dépend de
+      lui (preuve que le cloisonnement par client fonctionne réellement).
 
 ## Phase 9 — Provisioning end-to-end `[Claude]`
 
