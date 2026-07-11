@@ -964,6 +964,23 @@ duplication (pas de script bash généré séparément : l'agent, c'est le vrai 
       l'installation de la tâche cron plutôt que de la découvrir silencieusement au
       premier déclenchement réel.
 
+      **Vérifié contre la vraie instance `ntfy` du sujet** (self-hosted sur `mcm`,
+      `ntfy.ngner.space`, découverte en lisant le `Caddyfile` en direct), pas seulement
+      `ntfy.sh` (utilisé pendant 11.7 pour le test VM, ouvert par défaut). Un premier essai
+      a échoué en `403` : contrairement à `ntfy.sh`, cette instance a
+      `auth-default-access: "deny-all"` (`/home/ngner/ntfy/config/server.yml`) — toute
+      publication non authentifiée est refusée. `notify_failure` fait un simple `curl -d
+      ... <url>` sans authentification : **tel quel, il aurait échoué en silence contre
+      une instance auto-hébergée protégée**, pas seulement contre `ntfy.sh`. Pas un bug de
+      code à proprement parler (aucun changement nécessaire dans `backup.rs`) mais une
+      hypothèse d'usage à documenter : `curl`/`--ntfy-url` supportent nativement les
+      identifiants HTTP Basic embarqués dans l'URL (`https://user:pass@host/topic`), donc
+      la solution est de fournir `--ntfy-url` sous cette forme pour une instance protégée,
+      pas de changer le code. Utilisateur `ppo-agent` créé sur l'instance réelle du sujet
+      (`docker exec ntfy ntfy user add`, accès `write-only` limité au seul topic
+      `homelab` via `ntfy access` — jamais admin, jamais accès aux autres topics),
+      confirmé fonctionnel par un envoi réel reçu sur l'appareil du sujet.
+
 - [ ] **11.6** `[Claude]` Compilation croisée (`Host.arch` différent de la machine qui
       lance `bootstrap-agent`) — **spec seulement, pas d'automatisation**.
       *Fait quand* : un hôte `arm64` réel existe et peut recevoir un agent compilé pour
