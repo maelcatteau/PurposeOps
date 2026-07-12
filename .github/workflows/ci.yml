@@ -1,24 +1,32 @@
 name: CI
 
-# Covers only what's safe to run on a hosted runner: build, unit tests, lint.
+# `test` covers build/unit-tests/lint on both x86_64 and arm64 (public-repo hosted arm64
+# runners are free — see PORTING.md). `live-integration` runs tests/integration_workflow.py
+# against a synthetic, CI-only fixture config (see tests/ci-fixture-config/) rather than the
+# real PurposeOps-config submodule: that submodule is private (would need a new secret to
+# check out here) and holds real customer names/hostnames/IPs that must never land in this
+# public repo's Actions logs. See PORTING.md for the full reasoning.
 #
-# Deliberately NOT run here — both need real infrastructure a hosted runner doesn't have,
-# and are meant to be run locally (see CLAUDE.md / README.md "Development"):
-#   - tests/integration_workflow.py   needs local odoo-demo/odoo-demo-db Docker containers
-#                                      from a sibling repo not checked out here.
-#   - tests/bootstrap_workflow.py     needs a VirtualBox VM with nested virtualization,
-#                                      which hosted runners don't reliably support.
+# Deliberately NOT run here — both need infrastructure a hosted runner doesn't have, and are
+# meant to be run locally (see CLAUDE.md / README.md "Development"):
+#   - tests/bootstrap_workflow.py       needs a VirtualBox VM with nested virtualization,
+#                                        which hosted runners don't reliably support.
+#   - tests/backup_agent_workflow.py    same VM, plus a real ntfy.sh round trip.
 # `cargo test` itself has no such dependency: the one test that touches a real host/config
 # (ssh::tests::live_run_with_master_uptime_on_mcm) is #[ignore]d and excluded by default.
 
 on:
   push:
-    branches: [master, rust]
+    branches: [master]
   pull_request:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
@@ -27,6 +35,11 @@ jobs:
           components: clippy
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          # ubuntu-latest and ubuntu-24.04-arm are both `runner.os == 'Linux'` — without an
+          # explicit key the two would share a cache slot despite producing incompatible
+          # (x86_64 vs. aarch64) build artifacts.
+          key: ${{ matrix.os }}
 
       - name: cargo build
         run: cargo build --verbose
@@ -41,9 +54,67 @@ jobs:
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            echo "### :white_check_mark: build, test, and clippy all passed" >> "$GITHUB_STEP_SUMMARY"
+            echo "### :white_check_mark: build, test, and clippy all passed (${{ matrix.os }})" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "### :x: one or more checks failed — see the step logs above" >> "$GITHUB_STEP_SUMMARY"
+            echo "### :x: one or more checks failed on ${{ matrix.os }} — see the step logs above" >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Live tests (integration_workflow.py, bootstrap_workflow.py) are local-only and not run in CI — see README.md." >> "$GITHUB_STEP_SUMMARY"
+
+  live-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: live-integration
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pexpect
+        run: pip install pexpect
+
+      - name: Populate synthetic PurposeOps-config (no real customer data)
+        run: cp tests/ci-fixture-config/*.yaml PurposeOps-config/
+
+      - name: Point config lookup at this checkout
+        # base_path() in src/config.rs is hardcoded to $HOME/dev/nu-modules/PurposeOps (a
+        # personal single-user CLI, see CLAUDE.md) rather than being relative to wherever
+        # it's checked out — symlink that expected path at $GITHUB_WORKSPACE instead of
+        # changing production code just to accommodate CI.
+        run: |
+          mkdir -p "$HOME/dev/nu-modules"
+          ln -s "$GITHUB_WORKSPACE" "$HOME/dev/nu-modules/PurposeOps"
+
+      - name: Start demo-odoo fixture containers
+        run: |
+          FIXTURE="$RUNNER_TEMP/demo-odoo"
+          mkdir -p "$FIXTURE/odoo-data" "$FIXTURE/postgres-data-demo"
+          cp tests/ci-fixture-config/demo-odoo/docker-compose.yml "$FIXTURE/"
+          cp tests/ci-fixture-config/demo-odoo/odoo.conf "$FIXTURE/"
+          sudo chown -R 101:101 "$FIXTURE/odoo-data"
+          cd "$FIXTURE" && docker compose up -d --wait --wait-timeout 120
+          echo "PPO_TEST_DEMO_ODOO_DIR=$FIXTURE" >> "$GITHUB_ENV"
+
+      - name: cargo build
+        run: cargo build --verbose
+
+      - name: tests/integration_workflow.py
+        run: python3 tests/integration_workflow.py
+
+      - name: Stop demo-odoo fixture containers
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP/demo-odoo" && docker compose down -v
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "### :white_check_mark: live integration workflow passed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### :x: live integration workflow failed — see the step logs above" >> "$GITHUB_STEP_SUMMARY"
+          fi

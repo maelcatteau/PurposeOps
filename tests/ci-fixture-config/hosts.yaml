@@ -1,0 +1,8 @@
+localhost:
+  name: Local Machine
+  hostname: localhost
+  user: runner
+  port: ''
+  identity_file: ''
+  arch: x86_64
+  docker_context: default

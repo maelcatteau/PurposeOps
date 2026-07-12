@@ -1,0 +1,44 @@
+services:
+  odoo-demo:
+    image: odoo:18
+    container_name: odoo-demo
+    user: "101:101"
+    depends_on:
+      odoo-demo-db:
+        condition: service_healthy
+    networks:
+      - odoo-db-network
+    ports:
+      - "8069:8069"
+    restart: unless-stopped
+    volumes:
+      - ./odoo-data:/var/lib/odoo
+      - ./odoo.conf:/etc/odoo/odoo.conf
+    environment:
+      - HOST=odoo-demo-db
+      - USER=odoo
+      - PASSWORD=odoo_demo
+
+  odoo-demo-db:
+    image: postgres:15
+    container_name: odoo-demo-db
+    networks:
+      - odoo-db-network
+    volumes:
+      - ./postgres-data-demo:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=odoo
+      - POSTGRES_PASSWORD=odoo_demo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-odoo} -d ${POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+networks:
+  odoo-db-network:

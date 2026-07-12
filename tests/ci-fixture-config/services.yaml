@@ -1,0 +1,4 @@
+Vaultwarden:
+  template_dir_path: ~/dev/nu-modules/PurposeOps/templates/Vaultwarden/
+  template_compose_path: ~/dev/nu-modules/PurposeOps/templates/Vaultwarden/docker-compose.yml
+  variables: []
