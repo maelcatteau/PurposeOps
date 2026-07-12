@@ -59,8 +59,9 @@ DB_NAME = "inttest_db"
 MARKER_VALUE = "integration-test-checkpoint"
 # Backups now live under the deployment's own path_for_service (see PORTING.md), not a
 # centralized ~/backups/<abbrev>/<host_id> tree — must match create_deployment()'s
-# "Path for service on host" value.
-PATH_FOR_SERVICE = "/home/ngner/dev/demo-odoo"
+# "Path for service on host" value. Overridable so CI can point this at a fixture it
+# sets up itself rather than the developer laptop's real ~/dev/demo-odoo checkout.
+PATH_FOR_SERVICE = os.environ.get("PPO_TEST_DEMO_ODOO_DIR", os.path.expanduser("~/dev/demo-odoo"))
 
 LIFECYCLE_CONTAINER = "inttest-docker-lifecycle"
 
@@ -163,7 +164,7 @@ def create_customer():
     step(f"cc: create scratch customer '{CUSTOMER}'")
     h.create_customer(
         PPO_BIN, REPO_ROOT,
-        name=CUSTOMER, abbrev=ABBREV, host_id=HOST_ID, path_on_host="/home/ngner/dev/demo-odoo",
+        name=CUSTOMER, abbrev=ABBREV, host_id=HOST_ID, path_on_host=PATH_FOR_SERVICE,
     )
 
 
@@ -181,7 +182,7 @@ def create_deployment():
     child.expect("Path for service on host")
     child.sendline(PATH_FOR_SERVICE)
     child.expect("Path for docker-compose file")
-    child.sendline("/home/ngner/dev/demo-odoo/docker-compose.yml")
+    child.sendline(f"{PATH_FOR_SERVICE}/docker-compose.yml")
     child.expect("Deployment id")
     child.sendline(DEPLOYMENT_ID)
     child.expect("base de donn")
