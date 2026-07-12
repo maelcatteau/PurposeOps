@@ -1272,6 +1272,77 @@ Vérifié : les trois scripts lancés en direct après le refactor + l'extension
 ci-dessus), `bootstrap_workflow.py` et `backup_agent_workflow.py` (contre la VM réelle,
 `tests/vm/`) — tous `PASS`, aucune régression du refactor partagé.
 
+## CI : job `live-integration` + matrice arm64 `[Claude]`
+
+Hors plan de phases — à la demande explicite du sujet ("peux-tu évaluer si on peut aussi
+mettre le test d'intégration dans les GitHub Actions ? Et peut-être aussi tester sur
+architecture arm ?").
+
+**arm64 — confirmé faisable et gratuit.** Le dépôt est public (`gh repo view` →
+`visibility: PUBLIC`), et les runners hébergés `ubuntu-24.04-arm` sont gratuits (4 vCPU)
+pour les dépôts publics depuis leur passage en disponibilité générale (août 2025) —
+aucun coût, aucun changement de config nécessaire côté compte GitHub. Ajouté comme
+deuxième entrée d'une matrice sur le job `test` existant (build/test/clippy) : un vrai
+signal tôt sur une éventuelle casse de compilation arm64, utile en amont d'un futur
+chantier sur la Phase 11.6 (builds cross-arch de l'agent, actuellement non automatisés).
+Point d'attention découvert en écrivant le workflow : `ubuntu-latest` et
+`ubuntu-24.04-arm` partagent la même valeur `runner.os` (`Linux`) — sans clé de cache
+explicite, `Swatinem/rust-cache` aurait pu réutiliser un cache x86_64 sur le runner
+arm64 (artefacts de build incompatibles). Fixé avec `key: ${{ matrix.os }}`.
+
+**`live-integration` — faisable, mais pas de la façon envisagée dans le plan initial.**
+Le plan supposait qu'il suffirait de reproduire la fixture `demo-odoo` locale et de
+lancer `tests/integration_workflow.py` tel quel. Deux obstacles découverts en creusant,
+avant d'écrire quoi que ce soit :
+- `config::base_path()` est codé en dur sur `$HOME/dev/nu-modules/PurposeOps` (cohérent
+  avec "CLI personnel mono-utilisateur", voir CLAUDE.md) — pas relatif au checkout. Pas
+  de changement du code de prod pour accommoder la CI : un runner GitHub a bien un `$HOME`
+  réel (`/home/runner`), donc le job crée `$HOME/dev/nu-modules/PurposeOps` comme un
+  **symlink** vers `$GITHUB_WORKSPACE` plutôt que de réassigner `$HOME` globalement (ce
+  qui casserait la config d'autres outils comme `cargo`/`git`).
+- `PurposeOps-config` est un **submodule privé** contenant de vrais noms de clients et IPs
+  d'hôtes réels — le dépôt principal étant public, ses logs Actions le sont aussi.
+  Cocher `submodules: true` aurait exigé un nouveau secret (PAT avec accès en lecture à un
+  dépôt privé) ET aurait fait fuiter des données clients réelles dans des logs publics à
+  chaque run. Les deux écartés. À la place : un `actions/checkout` **par défaut** (sans
+  `submodules:`) laisse `PurposeOps-config/` comme un répertoire vide (vérifié localement
+  par un clone non-récursif) — le job y copie une fixture synthétique entièrement
+  fictive, committée dans le dépôt principal (`tests/ci-fixture-config/` : `hosts.yaml`
+  avec un seul hôte `localhost`, `customers.yaml`/`context.yaml` vides,
+  `services.yaml` avec `Vaultwarden` — parsing vérifié localement contre le vrai binaire
+  via un `$HOME` isolé avant d'écrire le workflow). Zéro secret ajouté, zéro donnée
+  cliente réelle exposée.
+
+**Fixture `demo-odoo` pour la CI** : `tests/ci-fixture-config/demo-odoo/` (compose +
+`odoo.conf`, copie du fixture local documenté dans CLAUDE.md, avec `depends_on: ...
+condition: service_healthy` ajouté pour que `docker compose up -d --wait` attende
+vraiment Postgres). `integration_workflow.py`'s `PATH_FOR_SERVICE` (et le chemin
+équivalent envoyé au wizard `cc`) est devenu configurable via
+`PPO_TEST_DEMO_ODOO_DIR` (défaut inchangé : `~/dev/demo-odoo`, la fixture réelle du
+laptop) plutôt que codé en dur sur `/home/ngner/dev/demo-odoo` — nécessaire pour
+pointer vers le répertoire de fixture propre à la CI (`$RUNNER_TEMP/demo-odoo`) sans
+toucher au comportement local par défaut.
+
+**Vérifié en conditions réelles, pas seulement en local** : poussé sur une branche
+scratch (`ci-live-integration-test`) + PR (#1, jamais mergée sans vérification — le
+trigger `push` ne couvre que `master`, il fallait une PR pour déclencher `pull_request`)
+pour observer le comportement sur de vrais runners hébergés avant de merger, suivant la
+même prudence que pour toute autre modif de CI. Les trois jobs (`test` x86_64, `test`
+arm64, `live-integration`) sont passés au vert — `live-integration` a mis 2m17s et son
+log confirme un vrai `PASS: full workflow succeeded` (backup + restore complets contre
+la fixture `demo-odoo` de la CI), pas juste un job vert par accident. PR mergée
+(fast-forward), branche scratch supprimée.
+
+**Note de cohérence, pas liée à la CI en soi** : `on.push.branches` ne référence plus
+que `master` (`rust` retiré) — la branche `rust` a cessé d'être utilisée après la
+restructuration du dépôt (voir "Réorganisation du dépôt" plus haut) ; ce nettoyage était
+en attente depuis cette session.
+
+**Non fait** : `bootstrap_workflow.py`/`backup_agent_workflow.py` restent local-only,
+confirmé pas transposable en CI hébergée — VirtualBox avec virtualisation imbriquée
+n'est pas fiable sur un runner hébergé (x86 ou arm), documenté dans le commentaire en
+tête de `ci.yml`.
+
 ## Phase 12 — TUI `[Claude, gros morceau]`
 
 Surcouche `ratatui` sur le socle CLI (le CLI reste la référence scriptable).
